@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: cargo-intel-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: cargo-intel-frontend
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: MONGO_URI
+        sync: false
+      - key: ML_SERVICE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: LOG_LEVEL
+        value: info
+
+  - type: web
+    name: cargo-intel-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: REACT_APP_API_URL
+        fromService:
+          type: web
+          name: cargo-intel-backend
+          envVarKey: RENDER_EXTERNAL_URL

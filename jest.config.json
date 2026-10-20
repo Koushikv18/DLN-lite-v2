@@ -1,0 +1,10 @@
+{
+  "testEnvironment": "node",
+  "testMatch": ["**/tests/backend/**/*.test.js"],
+  "collectCoverageFrom": [
+    "backend/**/*.js",
+    "!backend/wallet/**"
+  ],
+  "coverageReporters": ["text", "lcov"],
+  "testTimeout": 10000
+}

@@ -1,0 +1,3032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cargo Intel — 3D Logistics Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/globe.gl"></script>
+<style>
+:root {
+  --navy: #04091a;
+  --navy2: #080f24;
+  --navy3: #0c1530;
+  --blue: #1a6cf5;
+  --blue2: #2080ff;
+  --cyan: #00d4ff;
+  --cyan2: #00f0c8;
+  --amber: #f5a623;
+  --green: #00e676;
+  --red: #ff4455;
+  --text: #e8edf5;
+  --text2: #8b98b5;
+  --border: rgba(100,160,255,0.1);
+  --border2: rgba(100,160,255,0.2);
+  --card: rgba(12,21,48,0.9);
+  --glass: rgba(255,255,255,0.03);
+  --storm-bg: #020408;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Syne',sans-serif;background:var(--navy);color:var(--text);min-height:100vh;overflow-x:hidden;}
+#world-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;}
+.screen{display:none;position:relative;z-index:1;min-height:100vh;}
+.screen.active{display:flex;}
+
+/* ─── LANDING ─── */
+#landing{flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;}
+.landing-globe-wrap{
+  position:absolute;
+  left:-18vw;
+  top:50%;
+  width:min(88vw, 1220px);
+  aspect-ratio:1;
+  transform:translateY(-50%);
+  z-index:1;
+  opacity:0.2;
+  pointer-events:none;
+  filter:blur(0.2px) saturate(0.9);
+}
+#landing-globe{
+  width:100%;
+  height:100%;
+}
+.landing-globe-wrap::after{
+  content:'';
+  position:absolute;
+  inset:12%;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(0,212,255,0.12) 0%, rgba(0,212,255,0.04) 45%, rgba(0,212,255,0) 72%);
+  filter:blur(28px);
+}
+.logo{display:flex;align-items:center;gap:12px;margin-bottom:2rem;}
+.logo-icon{width:52px;height:52px;background:linear-gradient(135deg,var(--blue),var(--cyan));border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;}
+.logo-text{font-size:1.5rem;font-weight:800;background:linear-gradient(90deg,var(--cyan),var(--blue2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px;}
+.hero-tag{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--cyan);opacity:0.8;margin-bottom:1rem;font-family:'JetBrains Mono',monospace;}
+.hero-title{font-size:clamp(2rem,5vw,3.8rem);font-weight:800;line-height:1.1;margin-bottom:1rem;background:linear-gradient(180deg,#fff 0%,rgba(200,220,255,0.7) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.hero-sub{font-size:1.05rem;color:var(--text2);max-width:500px;margin:0 auto 2.5rem;line-height:1.7;}
+.stats-row{display:flex;gap:2rem;justify-content:center;margin-bottom:3rem;}
+.stat-item{text-align:center;}
+.stat-num{font-size:1.6rem;font-weight:800;color:var(--cyan);font-family:'JetBrains Mono',monospace;}
+.stat-lbl{font-size:0.75rem;color:var(--text2);text-transform:uppercase;letter-spacing:1px;}
+.role-cards{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:2rem;}
+.role-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.5rem 2rem;cursor:pointer;transition:all 0.3s;text-align:center;min-width:160px;backdrop-filter:blur(20px);}
+.role-card:hover{border-color:var(--cyan);transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,212,255,0.12);}
+.role-icon{font-size:2rem;margin-bottom:0.5rem;}
+.role-name{font-size:0.9rem;font-weight:700;color:var(--text);}
+.role-desc{font-size:0.75rem;color:var(--text2);margin-top:4px;}
+.live-ticker{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2);background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:6px 14px;display:inline-flex;align-items:center;gap:8px;margin-bottom:1.5rem;}
+.dot-ping{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);animation:ping 1.5s ease-in-out infinite;}
+@keyframes ping{0%,100%{box-shadow:0 0 0 0 rgba(0,230,118,0.5);}50%{box-shadow:0 0 0 6px rgba(0,230,118,0);}}
+
+/* ─── AUTH MODAL ─── */
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(5,10,25,0.85);z-index:100;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
+.modal-backdrop.open{display:flex;}
+.modal{background:var(--navy2);border:1px solid var(--border2);border-radius:20px;padding:2.5rem;width:100%;max-width:420px;position:relative;box-shadow:0 40px 80px rgba(0,0,0,0.6);}
+.modal-close{position:absolute;top:1rem;right:1rem;background:none;border:none;color:var(--text2);cursor:pointer;font-size:1.2rem;padding:4px 8px;}
+.modal h3{font-size:1.4rem;font-weight:800;margin-bottom:0.25rem;}
+.modal-role-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:1.5rem;}
+.badge-shipper{background:rgba(0,230,118,0.15);color:var(--green);}
+.badge-carrier{background:rgba(26,108,245,0.15);color:var(--cyan);}
+.badge-customs{background:rgba(245,166,35,0.15);color:var(--amber);}
+.field{margin-bottom:1rem;}
+.field label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+.field input{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 14px;font-family:inherit;font-size:14px;outline:none;transition:border 0.2s;}
+.field input:focus{border-color:var(--cyan);}
+.btn{width:100%;padding:12px;border-radius:12px;border:none;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;transition:all 0.2s;letter-spacing:0.3px;}
+.btn-primary{background:linear-gradient(135deg,var(--blue),var(--cyan));color:#fff;margin-top:0.5rem;}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,212,255,0.25);}
+.btn-sm{width:auto;padding:8px 18px;font-size:13px;border-radius:8px;}
+.btn-outline{background:transparent;border:1px solid var(--border2);color:var(--text);}
+.btn-outline:hover{border-color:var(--cyan);color:var(--cyan);}
+
+/* ─── APP SHELL ─── */
+#app{flex-direction:column;min-height:100vh;}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1.5rem;border-bottom:1px solid var(--border);background:rgba(4,9,26,0.95);backdrop-filter:blur(20px);position:sticky;top:0;z-index:50;}
+.topbar-logo{font-size:1rem;font-weight:800;background:linear-gradient(90deg,var(--cyan),var(--blue2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.3px;}
+.nav-tabs{display:flex;gap:4px;background:var(--glass);border:1px solid var(--border);border-radius:12px;padding:4px;}
+.nav-tab{padding:6px 16px;border-radius:8px;border:none;background:none;color:var(--text2);font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.nav-tab.active{background:linear-gradient(135deg,var(--blue),#0d4db5);color:#fff;}
+.user-badge{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);}
+.user-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+.dash-content{flex:1;padding:1.5rem;max-width:1400px;margin:0 auto;width:100%;}
+.dash-panel{display:none;}
+.dash-panel.active{display:block;}
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;}
+.panel-title{font-size:1.5rem;font-weight:800;}
+.panel-sub{color:var(--text2);font-size:0.85rem;margin-top:2px;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;}
+@media(max-width:768px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+@media(max-width:900px){
+  .landing-globe-wrap{
+    left:-36vw;
+    top:48%;
+    width:min(138vw, 980px);
+    opacity:0.16;
+  }
+}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.25rem;backdrop-filter:blur(20px);}
+.card-header{font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;color:var(--text2);font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:6px;}
+.metric{font-size:2rem;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--cyan);}
+.metric-label{font-size:0.75rem;color:var(--text2);margin-top:4px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media(max-width:640px){.form-grid{grid-template-columns:1fr;}}
+.form-full{grid-column:1/-1;}
+.field-inline label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text2);font-weight:700;margin-bottom:5px;}
+.field-inline input,.field-inline select,.field-inline textarea{width:100%;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 14px;font-family:inherit;font-size:13px;outline:none;transition:border 0.2s;}
+.field-inline input:focus,.field-inline select:focus,.field-inline textarea:focus{border-color:var(--cyan);}
+.field-inline select option{background:var(--navy2);}
+.create-btn{width:100%;padding:14px;background:linear-gradient(135deg,#1a6cf5,#00d4ff);border:none;border-radius:12px;color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:0.5px;transition:all 0.25s;margin-top:0.5rem;display:flex;align-items:center;justify-content:center;gap:8px;}
+.create-btn:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,212,255,0.3);}
+.blockchain-result{background:rgba(0,230,118,0.05);border:1px solid rgba(0,230,118,0.2);border-radius:14px;padding:1.25rem;margin-top:1rem;display:none;}
+.blockchain-result.show{display:block;}
+.hash-display{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);word-break:break-all;background:rgba(0,212,255,0.05);border-radius:8px;padding:8px 12px;margin-top:0.5rem;}
+.status{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}
+.status::before{content:'';width:6px;height:6px;border-radius:50%;}
+.status-transit{background:rgba(26,108,245,0.15);color:#60a5fa;}
+.status-transit::before{background:#60a5fa;box-shadow:0 0 6px #60a5fa;}
+.status-pending{background:rgba(245,166,35,0.15);color:var(--amber);}
+.status-pending::before{background:var(--amber);}
+.status-cleared{background:rgba(0,230,118,0.15);color:var(--green);}
+.status-cleared::before{background:var(--green);box-shadow:0 0 6px var(--green);}
+.status-rejected{background:rgba(255,68,85,0.15);color:var(--red);}
+.status-rejected::before{background:var(--red);}
+.shipment-list{display:flex;flex-direction:column;gap:0.75rem;}
+.shipment-row{background:var(--glass);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;transition:border 0.2s;}
+.shipment-row:hover{border-color:var(--border2);}
+.ship-id{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--cyan);}
+.ship-route{font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px;}
+.ship-route span{color:var(--text);}
+.ship-actions{display:flex;gap:6px;}
+.action-btn{padding:5px 12px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.action-btn:hover{background:var(--glass);}
+.action-btn.approve{border-color:rgba(0,230,118,0.3);color:var(--green);}
+.action-btn.approve:hover{background:rgba(0,230,118,0.08);}
+.action-btn.reject{border-color:rgba(255,68,85,0.3);color:var(--red);}
+.action-btn.reject:hover{background:rgba(255,68,85,0.08);}
+.feed-item{display:flex;align-items:flex-start;gap:10px;padding:0.75rem;border-radius:10px;background:var(--glass);border:1px solid var(--border);margin-bottom:0.5rem;font-size:13px;}
+.feed-icon{font-size:1.1rem;flex-shrink:0;margin-top:1px;}
+.feed-text{flex:1;line-height:1.5;}
+.feed-time{font-size:11px;color:var(--text2);flex-shrink:0;font-family:'JetBrains Mono',monospace;}
+.timeline{position:relative;padding-left:1.5rem;}
+.timeline::before{content:'';position:absolute;left:7px;top:0;bottom:0;width:1px;background:var(--border);}
+.tl-item{position:relative;padding-bottom:1.25rem;}
+.tl-item::before{content:'';position:absolute;left:-22px;top:4px;width:10px;height:10px;border-radius:50%;border:2px solid var(--border2);background:var(--navy);}
+.tl-item.done::before{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 8px var(--cyan);}
+.tl-title{font-size:13px;font-weight:600;}
+.tl-time{font-size:11px;color:var(--text2);margin-top:3px;font-family:'JetBrains Mono',monospace;}
+.verify-box{background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.15);border-radius:12px;padding:1rem;margin-bottom:0.75rem;}
+.verify-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border);}
+.verify-row:last-child{border-bottom:none;}
+.verify-key{color:var(--text2);}
+.verify-val{font-family:'JetBrains Mono',monospace;color:var(--text);font-size:11px;}
+.toast{position:fixed;bottom:2rem;right:2rem;background:var(--navy2);border:1px solid var(--border2);border-radius:12px;padding:1rem 1.5rem;font-size:13px;z-index:200;transform:translateY(80px);opacity:0;transition:all 0.35s cubic-bezier(0.34,1.56,0.64,1);max-width:360px;display:flex;align-items:center;gap:10px;}
+.toast.show{transform:translateY(0);opacity:1;}
+.chatbot-fab{position:fixed;right:2rem;bottom:6.5rem;width:58px;height:58px;border-radius:50%;border:1px solid rgba(0,212,255,0.35);background:linear-gradient(135deg,rgba(0,212,255,0.18),rgba(26,108,245,0.28));color:var(--text);font-size:1.5rem;cursor:pointer;z-index:210;box-shadow:0 20px 45px rgba(0,0,0,0.35);}
+.chatbot-panel{position:fixed;right:2rem;bottom:11rem;width:min(380px,calc(100vw - 2rem));height:560px;max-height:70vh;background:rgba(9,18,40,0.96);border:1px solid var(--border2);border-radius:22px;backdrop-filter:blur(18px);box-shadow:0 35px 80px rgba(0,0,0,0.45);z-index:210;display:none;overflow:hidden;}
+.chatbot-panel.open{display:flex;flex-direction:column;}
+.chatbot-head{padding:1rem 1rem 0.8rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.chatbot-title{font-size:0.95rem;font-weight:800;letter-spacing:0.3px;}
+.chatbot-sub{font-size:11px;color:var(--text2);margin-top:3px;}
+.chatbot-close{background:none;border:none;color:var(--text2);font-size:1.2rem;cursor:pointer;}
+.chatbot-body{flex:1;overflow:auto;padding:1rem;display:flex;flex-direction:column;gap:0.75rem;}
+.chatbot-msg{padding:0.8rem 0.95rem;border-radius:16px;border:1px solid var(--border);font-size:13px;line-height:1.5;white-space:pre-wrap;}
+.chatbot-msg.user{background:rgba(26,108,245,0.16);align-self:flex-end;max-width:85%;}
+.chatbot-msg.assistant{background:rgba(255,255,255,0.04);align-self:flex-start;max-width:92%;}
+.chatbot-foot{padding:0.9rem;border-top:1px solid var(--border);}
+.chatbot-input{display:flex;gap:0.6rem;align-items:flex-end;}
+.chatbot-input textarea{flex:1;min-height:48px;max-height:120px;resize:vertical;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:14px;color:var(--text);padding:0.85rem 0.95rem;font-family:inherit;font-size:13px;outline:none;}
+.chatbot-send{padding:0.85rem 1rem;border-radius:14px;border:1px solid rgba(0,230,118,0.25);background:rgba(0,230,118,0.08);color:var(--green);font-weight:700;cursor:pointer;}
+.chatbot-status{font-size:11px;color:var(--text2);margin-top:0.55rem;min-height:16px;}
+.loader{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.2);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite;display:none;}
+.loading .loader{display:inline-block;}
+.loading .btn-label{display:none;}
+@keyframes spin{to{transform:rotate(360deg);}}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+
+/* ══════════════════════════════════════════
+   3D SCENE: SHIPPER (Warehouse → Port)
+══════════════════════════════════════════ */
+.scene-shipper {
+  width:100%;
+  height:320px;
+  margin-bottom:1.5rem;
+  position:relative;
+  border-radius:20px;
+  overflow:hidden;
+  background:linear-gradient(180deg, #020812 0%, #050f28 40%, #0a1a40 100%);
+  border:1px solid var(--border);
+  perspective:1200px;
+}
+#shipper-canvas {
+  width:100%;height:100%;
+  position:absolute;inset:0;
+}
+.scene-label {
+  position:absolute;
+  top:12px;left:50%;transform:translateX(-50%);
+  font-size:10px;letter-spacing:3px;text-transform:uppercase;
+  color:var(--cyan);opacity:0.7;
+  font-family:'JetBrains Mono',monospace;
+  pointer-events:none;
+}
+
+/* ══════════════════════════════════════════
+   3D SCENE: CARRIER (Ocean + Ship)
+══════════════════════════════════════════ */
+.scene-carrier {
+  width:100%;height:380px;
+  margin-bottom:1.5rem;
+  position:relative;
+  border-radius:20px;
+  overflow:hidden;
+  border:1px solid var(--border);
+  background:#020812;
+}
+#carrier-canvas {
+  width:100%;height:100%;
+  position:absolute;inset:0;
+  display:block;
+}
+.weather-btn {
+  position:absolute;
+  top:14px;right:14px;
+  z-index:10;
+  padding:8px 18px;
+  border-radius:30px;
+  border:none;
+  font-family:'Syne',sans-serif;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:1px;
+  cursor:pointer;
+  transition:all 0.3s;
+  text-transform:uppercase;
+}
+.weather-btn.calm {
+  background:rgba(0,212,255,0.15);
+  color:var(--cyan);
+  border:1px solid rgba(0,212,255,0.3);
+}
+.weather-btn.storm {
+  background:rgba(255,68,85,0.2);
+  color:#ff8090;
+  border:1px solid rgba(255,68,85,0.4);
+  animation:stormPulse 1.5s ease-in-out infinite;
+}
+@keyframes stormPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,68,85,0.3);}50%{box-shadow:0 0 0 8px rgba(255,68,85,0);}}
+
+/* ══════════════════════════════════════════
+   3D SCENE: CUSTOMS (Port Terminal)
+══════════════════════════════════════════ */
+.scene-customs {
+  width:100%;height:300px;
+  margin-bottom:1.5rem;
+  position:relative;
+  border-radius:20px;
+  overflow:hidden;
+  background:linear-gradient(180deg,#030810 0%,#060e20 60%,#0a1a35 100%);
+  border:1px solid var(--border);
+}
+#customs-canvas {
+  width:100%;height:100%;
+  position:absolute;inset:0;
+}
+
+/* ─── SECTION TITLE ─── */
+.section-title{font-size:0.8rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--text2);font-weight:700;margin-bottom:0.75rem;}
+</style>
+</head>
+<body>
+
+<canvas id="world-canvas"></canvas>
+
+<!-- ═══════════════ LANDING ═══════════════ -->
+<div id="landing" class="screen active">
+  <div class="landing-globe-wrap" aria-hidden="true">
+    <div id="landing-globe"></div>
+  </div>
+  <div style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;max-width:800px;margin:0 auto;">
+    <div class="live-ticker" id="landing-live-ticker"><span class="dot-ping"></span>LIVE: loading shipment network…</div>
+    <div class="logo">
+      <div class="logo-icon">🌐</div>
+      <div class="logo-text">Cargo Intel</div>
+    </div>
+    <div class="hero-tag">Blockchain Logistics Platform</div>
+    <h1 class="hero-title">Global Trade,<br>On the Chain</h1>
+    <p class="hero-sub">End-to-end shipment visibility with immutable blockchain records, AI-powered disruption alerts, and real-time cargo tracking across all roles.</p>
+    <div class="stats-row">
+      <div class="stat-item"><div class="stat-num" id="landing-stat-shipments">0</div><div class="stat-lbl">Shipments</div></div>
+      <div class="stat-item"><div class="stat-num" id="landing-stat-ontime">0%</div><div class="stat-lbl">On-time</div></div>
+      <div class="stat-item"><div class="stat-num" id="landing-stat-ports">0</div><div class="stat-lbl">Ports</div></div>
+      <div class="stat-item"><div class="stat-num" id="landing-stat-alerts">0</div><div class="stat-lbl">High Risk</div></div>
+    </div>
+    <div style="font-size:0.85rem;color:var(--text2);margin-bottom:1rem;font-weight:600;">Select your role to get started</div>
+    <div class="role-cards">
+      <div class="role-card" onclick="openAuth('shipper')">
+        <div class="role-icon">🏭</div>
+        <div class="role-name">Shipper</div>
+        <div class="role-desc">Create & manage shipments</div>
+      </div>
+      <div class="role-card" onclick="openAuth('carrier')">
+        <div class="role-icon">🚢</div>
+        <div class="role-name">Carrier</div>
+        <div class="role-desc">Track routes & alerts</div>
+      </div>
+      <div class="role-card" onclick="openAuth('customs')">
+        <div class="role-icon">🛃</div>
+        <div class="role-name">Customs</div>
+        <div class="role-desc">Verify & clear cargo</div>
+      </div>
+    </div>
+    <div style="margin-top:1rem;font-size:12px;color:var(--text2);">Secured by Polygon · Powered by Solidity · GDPR Compliant</div>
+  </div>
+</div>
+
+<!-- ═══════════════ AUTH MODAL ═══════════════ -->
+<div class="modal-backdrop" id="auth-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAuth()">✕</button>
+    <h3 id="auth-title">Sign In</h3>
+    <div id="auth-badge" class="modal-role-badge">Shipper</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:1rem;">
+      <button class="btn btn-outline btn-sm" id="auth-signin-tab" type="button" onclick="setAuthMode('login')">Sign In</button>
+      <button class="btn btn-outline btn-sm" id="auth-signup-tab" type="button" onclick="setAuthMode('register')">Create Account</button>
+    </div>
+    <div class="field"><label>Full Name</label><input type="text" id="auth-name" placeholder="John Maritime" /></div>
+    <div class="field"><label>Email Address</label><input type="email" id="auth-email" placeholder="you@company.com" /></div>
+    <div class="field"><label>Password</label><input type="password" id="auth-pass" placeholder="••••••••" /></div>
+    <div id="auth-feedback" style="min-height:18px;margin:-0.2rem 0 0.8rem;font-size:12px;color:var(--amber);text-align:center;"></div>
+    <button class="btn btn-primary" id="auth-submit-btn" onclick="submitAuth()"><span class="btn-label" id="auth-submit-label">Enter Dashboard</span><span class="loader"></span></button>
+    <div style="margin-top:1rem;font-size:12px;color:var(--text2);text-align:center;">JWT secured · Role-based access · Encrypted</div>
+  </div>
+</div>
+
+<!-- ═══════════════ APP SHELL ═══════════════ -->
+<div id="app" class="screen">
+  <div class="topbar">
+    <div class="topbar-logo">⛓ Cargo Intel</div>
+    <div class="nav-tabs" id="nav-tabs"></div>
+    <div class="user-badge">
+      <div class="user-dot"></div>
+      <span id="user-name-display">User</span>
+      <button class="btn btn-sm btn-outline" onclick="logout()" style="margin-left:8px;">Logout</button>
+    </div>
+  </div>
+
+  <div class="dash-content">
+
+    <!-- ══ SHIPPER ══ -->
+    <div class="dash-panel" id="panel-shipper">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Shipper Dashboard</div>
+          <div class="panel-sub">Create blockchain-secured shipments — warehouse to port</div>
+        </div>
+        <div class="status status-cleared">Active</div>
+      </div>
+
+      <!-- 3D Warehouse→Port Scene -->
+      <div class="scene-shipper">
+        <canvas id="shipper-canvas"></canvas>
+        <div class="scene-label">Warehouse Operations — Port Dispatch Live</div>
+      </div>
+
+      <div class="grid-3" style="margin-bottom:1.5rem;">
+        <div class="card"><div class="card-header">📦 Total Shipments</div><div class="metric" id="s-total">12</div><div class="metric-label">All time</div></div>
+        <div class="card"><div class="card-header">🔗 On Blockchain</div><div class="metric" id="s-chain">12</div><div class="metric-label">Immutable records</div></div>
+        <div class="card"><div class="card-header">✅ Cleared</div><div class="metric" id="s-cleared">3</div><div class="metric-label">This month</div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-header">⊕ Create New Shipment</div>
+        <div class="form-grid">
+          <div class="field-inline"><label>Container ID</label><input type="text" id="f-container" placeholder="MSCU7893421" /></div>
+          <div class="field-inline"><label>Carrier</label><select id="f-carrier"><option>MSC Mediterranean</option><option>Maersk Line</option><option>COSCO Shipping</option><option>CMA CGM</option><option>Evergreen Marine</option></select></div>
+          <div class="field-inline"><label>Origin Port</label><select id="f-origin"></select></div>
+          <div class="field-inline"><label>Destination Port</label><select id="f-dest"></select></div>
+          <div class="field-inline"><label>Cargo Type</label><select id="f-cargo"><option>Electronics</option><option>Machinery</option><option>Textiles</option><option>Chemicals</option><option>Food & Beverages</option><option>Automotive Parts</option></select></div>
+          <div class="field-inline"><label>Weight (MT)</label><input type="number" id="f-weight" placeholder="24.5" /></div>
+          <div class="field-inline"><label>Estimated Arrival</label><input type="date" id="f-eta" /></div>
+          <div class="field-inline"><label>Contact Email</label><input type="email" id="f-email" placeholder="ops@company.com" /></div>
+          <div class="field-inline form-full"><label>Notes / Special Instructions</label><textarea id="f-notes" rows="2" placeholder="Temperature controlled, fragile items…" style="resize:vertical;"></textarea></div>
+        </div>
+        <button class="create-btn" id="create-btn" onclick="createShipment()">
+          <span>⛓</span><span class="btn-label">Create Shipment on Blockchain</span><span class="loader"></span>
+        </button>
+        <div class="blockchain-result" id="bc-result">
+          <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--green);font-size:14px;">✅ Shipment Created & Recorded on Polygon</div>
+          <div style="margin-top:0.75rem;"><div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;">Tx Hash</div><div class="hash-display" id="bc-hash"></div></div>
+          <div style="margin-top:0.75rem;font-size:11px;color:var(--text2);">Block: <span id="bc-block" style="color:var(--text);font-family:'JetBrains Mono',monospace;"></span> · Status: <span style="color:var(--green);font-weight:700;">CONFIRMED</span> · Network: <span style="color:var(--cyan);">Polygon Mainnet</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">📋 My Shipments</div>
+        <div class="shipment-list" id="shipper-list"></div>
+      </div>
+    </div>
+
+    <!-- ══ CARRIER ══ -->
+    <div class="dash-panel" id="panel-carrier">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Carrier Operations</div>
+          <div class="panel-sub">Real-time 3D fleet monitoring — ocean crossing with live weather</div>
+        </div>
+        <div class="status status-transit">In Service</div>
+      </div>
+
+      <!-- 3D Ocean + Ship Scene -->
+      <div class="scene-carrier">
+        <canvas id="carrier-canvas"></canvas>
+        <button class="weather-btn calm" id="weather-btn" onclick="toggleWeather()">🌤 Calm Seas</button>
+        <div class="scene-label" style="top:12px;left:14px;transform:none;">LIVE FLEET · VESSEL MSC ORNELLA</div>
+      </div>
+
+      <div class="grid-3" style="margin-bottom:1.5rem;">
+        <div class="card"><div class="card-header">🚢 Active Routes</div><div class="metric">8</div><div class="metric-label">Vessels at sea</div></div>
+        <div class="card"><div class="card-header">⏱ Avg ETA</div><div class="metric">14d</div><div class="metric-label">Shanghai → Rotterdam</div></div>
+        <div class="card"><div class="card-header">⚠️ Alerts</div><div class="metric" id="alert-count" style="color:var(--amber);">3</div><div class="metric-label">Require attention</div></div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:1.5rem;">
+        <div class="card"><div class="card-header">📍 Active Shipments</div><div class="shipment-list" id="carrier-list"></div></div>
+        <div class="card">
+          <div class="card-header">🤖 AI Disruption Feed</div>
+          <div id="ai-feed">
+            <div class="feed-item"><div class="feed-icon">🌪️</div><div class="feed-text"><strong style="color:var(--amber);">Typhoon Warning</strong> — South China Sea corridor. Route deviation +48h.</div><div class="feed-time">2m ago</div></div>
+            <div class="feed-item"><div class="feed-icon">⚓</div><div class="feed-text"><strong style="color:var(--red);">Port Congestion</strong> — Rotterdam terminal B, 72hr delay. 4 vessels affected.</div><div class="feed-time">14m ago</div></div>
+            <div class="feed-item"><div class="feed-icon">📊</div><div class="feed-text"><strong style="color:var(--cyan);">Risk Analysis</strong> — Suez Canal passage risk LOW. Normal transit expected.</div><div class="feed-time">1h ago</div></div>
+            <div class="feed-item"><div class="feed-icon">🌊</div><div class="feed-text"><strong style="color:var(--green);">Weather Clear</strong> — Atlantic crossing conditions optimal for 5 days.</div><div class="feed-time">2h ago</div></div>
+            <div class="feed-item"><div class="feed-icon">🛑</div><div class="feed-text"><strong style="color:var(--amber);">Customs Alert</strong> — Singapore MAS updated screening for electronics.</div><div class="feed-time">4h ago</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div class="card-header" id="carrier-timeline-title">📅 Shipment Timeline</div>
+          <select id="carrier-timeline-select" onchange="setCarrierTimelineShipment(this.value)" style="min-width:280px;"></select>
+        </div>
+        <div class="timeline" id="carrier-timeline" style="margin-top:0.5rem;">
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ CUSTOMS ══ -->
+    <div class="dash-panel" id="panel-customs">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Customs & Clearance</div>
+          <div class="panel-sub">Blockchain-verified cargo inspection — port terminal live view</div>
+        </div>
+        <div class="status status-pending">On Duty</div>
+      </div>
+
+      <!-- 3D Port Terminal Scene -->
+      <div class="scene-customs">
+        <canvas id="customs-canvas"></canvas>
+        <div class="scene-label">Port Terminal — Container Inspection Live</div>
+      </div>
+
+      <div class="grid-3" style="margin-bottom:1.5rem;">
+        <div class="card"><div class="card-header">📥 Incoming</div><div class="metric" style="color:var(--amber);" id="c-incoming">4</div><div class="metric-label">Awaiting inspection</div></div>
+        <div class="card"><div class="card-header">✅ Cleared Today</div><div class="metric" style="color:var(--green);" id="c-cleared">7</div><div class="metric-label">24hr period</div></div>
+        <div class="card"><div class="card-header">⛔ Rejected</div><div class="metric" style="color:var(--red);" id="c-rejected">1</div><div class="metric-label">Pending review</div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-header">🔗 Blockchain Verification</div>
+        <div id="customs-list"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toast-icon">✅</span><span id="toast-msg">Done!</span></div>
+<button class="chatbot-fab" id="chatbot-fab" type="button" onclick="toggleChatbot()">🤖</button>
+<div class="chatbot-panel" id="chatbot-panel">
+  <div class="chatbot-head">
+    <div>
+      <div class="chatbot-title">Logistics Copilot</div>
+      <div class="chatbot-sub" id="chatbot-sub">Ask about shipments, carrier flow, customs, or risk.</div>
+    </div>
+    <button class="chatbot-close" type="button" onclick="toggleChatbot(false)">✕</button>
+  </div>
+  <div class="chatbot-body" id="chatbot-body"></div>
+  <div class="chatbot-foot">
+    <div class="chatbot-input">
+      <textarea id="chatbot-input" placeholder="Ask about shipments, delays, risk, or a shipment ID..." onkeydown="handleChatbotKey(event)"></textarea>
+      <button class="chatbot-send" id="chatbot-send" type="button" onclick="submitChatbot()">Send</button>
+    </div>
+    <div class="chatbot-status" id="chatbot-status"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let currentRole = null, currentUser = null;
+let stormMode = false;
+const portalParams = new URLSearchParams(window.location.search);
+const apiBaseFromQuery = portalParams.get("apiBase");
+const API_BASE =
+  apiBaseFromQuery ||
+  window.DLN_API_BASE ||
+  window.localStorage.getItem("dln-lite-api-base") ||
+  "http://localhost:4000/api";
+const AUTH_STORAGE_KEY = "dln-lite-auth-session";
+const SHIPMENT_STORAGE_KEY = "dln-lite-shipments-cache";
+const NOTIFICATION_STORAGE_KEY = "dln-lite-notifications-cache";
+let authMode = "login";
+let shipments = [];
+let analyticsSummary = null;
+let analyticsRisk = null;
+let analyticsRoutes = [];
+let disruptionSeed = 0;
+let dataMode = "live";
+let notifications = [];
+let selectedCarrierTimelineShipmentId = "";
+let selectedRouteShipmentId = "";
+let chatbotOpen = false;
+let chatbotHistory = [
+  {
+    role: "assistant",
+    content: "I am your logistics copilot. I can explain shipment status, carrier milestones, customs outcomes, and dashboard data using the records available in this system.",
+  },
+];
+
+const SEA_PORTS = [
+  "Antwerp, BE",
+  "Auckland, NZ",
+  "Balboa, PA",
+  "Bangkok, TH",
+  "Barcelona, ES",
+  "Busan, KR",
+  "Cape Town, ZA",
+  "Chennai, IN",
+  "Colombo, LK",
+  "Dubai, AE",
+  "Durban, ZA",
+  "Felixstowe, UK",
+  "Hamburg, DE",
+  "Hong Kong, HK",
+  "Houston, US",
+  "Jebel Ali, AE",
+  "Jakarta, ID",
+  "Kaohsiung, TW",
+  "Klang, MY",
+  "Laem Chabang, TH",
+  "Le Havre, FR",
+  "Los Angeles, US",
+  "Manila, PH",
+  "Melbourne, AU",
+  "Mumbai, IN",
+  "Mundra, IN",
+  "New York, US",
+  "Nhava Sheva, IN",
+  "Osaka, JP",
+  "Piraeus, GR",
+  "Qingdao, CN",
+  "Rotterdam, NL",
+  "Salalah, OM",
+  "Santos, BR",
+  "Seattle, US",
+  "Shanghai, CN",
+  "Shenzhen, CN",
+  "Singapore, SG",
+  "Tanjung Pelepas, MY",
+  "Tokyo, JP",
+  "Valencia, ES",
+  "Vancouver, CA",
+  "Yantian, CN",
+];
+
+const ROUTE_TEMPLATES = {
+  default: [
+    {
+      name: "Balanced Ocean Route",
+      ports: ["Origin Port", "Singapore, SG", "Destination Port"],
+      distance: 17800,
+      weather: "moderate",
+      stops: 1,
+      originCongestion: 0.46,
+      destinationCongestion: 0.42,
+      carrierRate: 0.24,
+      routeAvgDelayDays: 3.2,
+      note: "Balanced transit with a major hub transfer.",
+    },
+    {
+      name: "Low-Risk Diversion",
+      ports: ["Origin Port", "Colombo, LK", "Jebel Ali, AE", "Destination Port"],
+      distance: 19600,
+      weather: "clear",
+      stops: 2,
+      originCongestion: 0.34,
+      destinationCongestion: 0.31,
+      carrierRate: 0.17,
+      routeAvgDelayDays: 2.4,
+      note: "Longer path, but uses less congested ports and calmer weather windows.",
+    },
+    {
+      name: "Fast Direct Service",
+      ports: ["Origin Port", "Destination Port"],
+      distance: 16200,
+      weather: "storm",
+      stops: 0,
+      originCongestion: 0.58,
+      destinationCongestion: 0.49,
+      carrierRate: 0.28,
+      routeAvgDelayDays: 4.1,
+      note: "Shortest distance, but more exposed to weather and schedule volatility.",
+    },
+  ],
+  "Shanghai, CN|Rotterdam, NL": [
+    {
+      name: "Suez Mainline",
+      ports: ["Shanghai, CN", "Singapore, SG", "Suez Transit", "Rotterdam, NL"],
+      distance: 19200,
+      weather: "moderate",
+      stops: 2,
+      originCongestion: 0.52,
+      destinationCongestion: 0.47,
+      carrierRate: 0.26,
+      routeAvgDelayDays: 3.8,
+      note: "Fastest regular Europe lane with moderate congestion exposure.",
+    },
+    {
+      name: "Cape Diversion",
+      ports: ["Shanghai, CN", "Colombo, LK", "Cape Town, ZA", "Rotterdam, NL"],
+      distance: 24400,
+      weather: "clear",
+      stops: 2,
+      originCongestion: 0.33,
+      destinationCongestion: 0.35,
+      carrierRate: 0.18,
+      routeAvgDelayDays: 2.7,
+      note: "Lower disruption risk, but adds distance and sailing time.",
+    },
+    {
+      name: "Priority Europe Express",
+      ports: ["Shanghai, CN", "Singapore, SG", "Rotterdam, NL"],
+      distance: 18100,
+      weather: "storm",
+      stops: 1,
+      originCongestion: 0.61,
+      destinationCongestion: 0.51,
+      carrierRate: 0.29,
+      routeAvgDelayDays: 4.4,
+      note: "Shortest plan with premium service, but highest weather and berth risk.",
+    },
+  ],
+  "Singapore, SG|Los Angeles, US": [
+    {
+      name: "Pacific Mainline",
+      ports: ["Singapore, SG", "Kaohsiung, TW", "Los Angeles, US"],
+      distance: 14500,
+      weather: "moderate",
+      stops: 1,
+      originCongestion: 0.43,
+      destinationCongestion: 0.56,
+      carrierRate: 0.24,
+      routeAvgDelayDays: 3.5,
+      note: "Standard Pacific crossing with dependable carrier coverage.",
+    },
+    {
+      name: "Northern Pacific Buffer",
+      ports: ["Singapore, SG", "Tokyo, JP", "Vancouver, CA", "Los Angeles, US"],
+      distance: 16800,
+      weather: "clear",
+      stops: 2,
+      originCongestion: 0.31,
+      destinationCongestion: 0.37,
+      carrierRate: 0.19,
+      routeAvgDelayDays: 2.6,
+      note: "Safer weather window and lower port congestion, with an extra handoff.",
+    },
+    {
+      name: "Fast West Coast Express",
+      ports: ["Singapore, SG", "Los Angeles, US"],
+      distance: 13600,
+      weather: "storm",
+      stops: 0,
+      originCongestion: 0.54,
+      destinationCongestion: 0.62,
+      carrierRate: 0.3,
+      routeAvgDelayDays: 4.8,
+      note: "Shortest route, but exposed to volatile Pacific weather and berth queues.",
+    },
+  ],
+};
+
+const FALLBACK_RAW_SHIPMENTS = [
+  {
+    shipmentId: "SHP-001",
+    containerId: "MSCU7893421",
+    origin: "Shanghai, CN",
+    destination: "Rotterdam, NL",
+    carrier: "MSC Mediterranean",
+    cargoType: "Electronics",
+    weightKg: 24500,
+    estimatedArrival: "2026-05-18T00:00:00.000Z",
+    status: "IN_CUSTOMS",
+    delayRiskScore: 0.74,
+    events: [
+      { eventType: "SHIPMENT_CREATED", txId: "0x8f23c91ab1f0d8a77c1027d9c604011ac0f1be5ad2cb7b56611bcd2e6ab13d41" },
+      { eventType: "DEPARTED_PORT", txId: "0x17d3b53ce37f8c2b36f193dd92341643df1cc1204dfd939567d7948a67741c12" },
+      { eventType: "ARRIVED_PORT", txId: "0x4d43bea0463dc5d4d08d5fa4fb95e3594830d34b0729ddcc54bb38682ca93db5" },
+      { eventType: "CUSTOMS_ENTRY", txId: "0xa912fc5a7fe44609ccbe515f62af4e36fdf660943cc6a811efbea48fc590c731" },
+    ],
+  },
+  {
+    shipmentId: "SHP-002",
+    containerId: "MAEU4459820",
+    origin: "Shenzhen, CN",
+    destination: "Hamburg, DE",
+    carrier: "Maersk Line",
+    cargoType: "Machinery",
+    weightKg: 19800,
+    estimatedArrival: "2026-05-11T00:00:00.000Z",
+    status: "IN_TRANSIT",
+    delayRiskScore: 0.42,
+    events: [
+      { eventType: "SHIPMENT_CREATED", txId: "0x1f10c37d97990e236c8994d322f41bd8a154278e60e467c8ddf0ad8b9b18e510" },
+      { eventType: "DEPARTED_PORT", txId: "0x6ec742c9017d9259214c5a4484f527848265b9d7b1d67adcc4cd365d8595f5f6" },
+    ],
+  },
+  {
+    shipmentId: "SHP-003",
+    containerId: "COSU2234107",
+    origin: "Singapore, SG",
+    destination: "Dubai, AE",
+    carrier: "COSCO Shipping",
+    cargoType: "Chemicals",
+    weightKg: 12100,
+    estimatedArrival: "2026-05-06T00:00:00.000Z",
+    status: "DELAYED",
+    delayRiskScore: 0.88,
+    events: [
+      { eventType: "SHIPMENT_CREATED", txId: "0xbff9c440a6ce76fa2cce39f1ff212f91be90186ca045665ee58e3e4d8f4306b9" },
+      { eventType: "DELAY_REPORTED", txId: "0x28b66420d7f5dfa2c10fe94f42758e0db878c4d0c41b7b5d926fefad54d2df26" },
+    ],
+  },
+  {
+    shipmentId: "SHP-004",
+    containerId: "CMAU1029344",
+    origin: "Busan, KR",
+    destination: "Los Angeles, US",
+    carrier: "CMA CGM",
+    cargoType: "Automotive Parts",
+    weightKg: 17400,
+    estimatedArrival: "2026-05-22T00:00:00.000Z",
+    status: "DELIVERED",
+    delayRiskScore: 0.13,
+    events: [
+      { eventType: "SHIPMENT_CREATED", txId: "0x91143fa9fe3709447705dfdf3d477cb98b644ef5071e2bd0c520c6d8236cb658" },
+      { eventType: "CUSTOMS_CLEARED", txId: "0xf0462dad836516e3194131b84c669dd12f75af3f4287e946ec56a1df4ea14868" },
+      { eventType: "DELIVERED", txId: "0x4979859dcb7a8470a0b8f832d550a7a70f01fe112d40c87fb2d37e6649d28707" },
+    ],
+  },
+];
+const inflightRequests = new Map();
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function fallbackHash(seed) {
+  let value = 0;
+  for (let i = 0; i < seed.length; i += 1) value = ((value << 5) - value + seed.charCodeAt(i)) >>> 0;
+  return `0x${value.toString(16).padStart(8, "0").repeat(8).slice(0, 64)}`;
+}
+
+function minutesAgoLabel(date = new Date()) {
+  const diff = Math.max(1, Math.round((Date.now() - new Date(date).getTime()) / 60000));
+  return diff < 60 ? `${diff}m ago` : `${Math.round(diff / 60)}h ago`;
+}
+
+function pushNotification(icon, title, text, roles = ["shipper", "carrier", "customs"]) {
+  notifications.unshift({
+    icon,
+    title,
+    text,
+    roles,
+    at: new Date().toISOString(),
+  });
+  notifications = notifications.slice(0, 12);
+  persistNotifications();
+}
+
+function latestEventType(shipment) {
+  return shipment?.events?.length ? shipment.events[shipment.events.length - 1].eventType : "";
+}
+
+function shipmentPhase(shipment) {
+  const latest = latestEventType(shipment);
+  if (shipment.status === "cleared") return "ARRIVED";
+  if (shipment.status === "rejected") return "ARRIVED";
+  if (latest === "ARRIVED_PORT" || latest === "CUSTOMS_ENTRY" || latest === "CUSTOMS_CLEARED" || latest === "CUSTOMS_REJECTED") return "ARRIVED";
+  if (latest === "CHECKPOINT_2") return "CHECKPOINT_2";
+  if (latest === "CHECKPOINT_1") return "CHECKPOINT_1";
+  if (latest === "DEPARTED_PORT") return "DEPARTED_PORT";
+  return "CREATED";
+}
+
+function milestoneMeta(step, shipment) {
+  const dest = shipment?.dest || "Destination";
+  const origin = shipment?.origin || "Origin";
+  return {
+    CREATED: { eventType: "SHIPMENT_CREATED", location: origin, description: "Shipment registered and ready for carrier handoff", nextStatus: "pending", label: "Created" },
+    DEPARTED_PORT: { eventType: "DEPARTED_PORT", location: origin, description: "Shipment departed origin terminal", nextStatus: "transit", label: "Departed" },
+    CHECKPOINT_1: { eventType: "CHECKPOINT_1", location: "Checkpoint 1", description: "Shipment reached checkpoint 1", nextStatus: "transit", label: "Checkpoint 1" },
+    CHECKPOINT_2: { eventType: "CHECKPOINT_2", location: "Checkpoint 2", description: "Shipment reached checkpoint 2", nextStatus: "transit", label: "Checkpoint 2" },
+    ARRIVED: { eventType: "ARRIVED_PORT", location: dest, description: "Shipment arrived at destination and entered customs queue", nextStatus: "pending", label: "Arrived" },
+  }[step];
+}
+
+async function apiRequest(path, options = {}, attempt = 0) {
+  const method = (options.method || "GET").toUpperCase();
+  const key = `${method}:${path}:${options.body || ""}`;
+  if (method === "GET" && inflightRequests.has(key)) return inflightRequests.get(key);
+
+  const request = (async () => {
+    try {
+      const mergedHeaders = {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      };
+      const response = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: mergedHeaders,
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const shouldRetry = response.status === 429 && attempt < 2;
+        if (shouldRetry) {
+          await delay(350 * (attempt + 1));
+          return apiRequest(path, options, attempt + 1);
+        }
+        if (response.status === 429) {
+          throw new Error("Too many requests. Using cached/demo data where available.");
+        }
+        throw new Error(payload.error || payload.message || `Request failed: ${response.status}`);
+      }
+      return payload;
+    } catch (error) {
+      if (attempt < 1 && (error.name === "TypeError" || /Failed to fetch/i.test(error.message))) {
+        await delay(250);
+        return apiRequest(path, options, attempt + 1);
+      }
+      throw error;
+    } finally {
+      inflightRequests.delete(key);
+    }
+  })();
+
+  if (method === "GET") inflightRequests.set(key, request);
+  return request;
+}
+
+function authHeaders() {
+  return currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {};
+}
+
+function setAuthFeedback(message = "", tone = "var(--amber)") {
+  const feedback = document.getElementById("auth-feedback");
+  if (!feedback) return;
+  feedback.textContent = message;
+  feedback.style.color = tone;
+}
+
+function setAuthMode(mode = "login") {
+  authMode = mode;
+  const isRegister = mode === "register";
+  const titleRole = currentRole ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1) : "Account";
+  const title = document.getElementById("auth-title");
+  const submitLabel = document.getElementById("auth-submit-label");
+  const nameField = document.getElementById("auth-name");
+  const signInTab = document.getElementById("auth-signin-tab");
+  const signUpTab = document.getElementById("auth-signup-tab");
+
+  if (title) title.textContent = `${isRegister ? "Create Account for" : "Sign In as"} ${titleRole}`;
+  if (submitLabel) submitLabel.textContent = isRegister ? "Create Account" : "Enter Dashboard";
+  if (nameField) {
+    nameField.disabled = !isRegister;
+    if (!isRegister) nameField.value = "";
+  }
+  if (signInTab) signInTab.style.borderColor = !isRegister ? "var(--cyan)" : "var(--border)";
+  if (signUpTab) signUpTab.style.borderColor = isRegister ? "var(--cyan)" : "var(--border)";
+  setAuthFeedback(isRegister ? `New ${titleRole.toLowerCase()} account will be created.` : "");
+}
+
+function saveAuthSession() {
+  if (!currentUser?.token) return;
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+    token: currentUser.token,
+    role: currentUser.role,
+    name: currentUser.name,
+    email: currentUser.email,
+  }));
+}
+
+function clearAuthSession() {
+  window.localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+async function restoreAuthSession() {
+  try {
+    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!saved?.token) return;
+    const response = await apiRequest("/auth/me", {
+      headers: { Authorization: `Bearer ${saved.token}` },
+    });
+    currentUser = { ...response.user, token: saved.token };
+    currentRole = response.user.role;
+    showApp();
+  } catch {
+    clearAuthSession();
+  }
+}
+
+function mapStatus(shipment) {
+  if (!shipment) return "pending";
+  if (shipment.status === "DELIVERED") return "cleared";
+  if (shipment.status === "DELAYED") return "rejected";
+
+  const events = shipment.events || [];
+  const latestEvent = events.length ? events[events.length - 1].eventType : "";
+  if (latestEvent === "CUSTOMS_CLEARED") return "cleared";
+  if (latestEvent === "DELAY_REPORTED" || latestEvent === "CUSTOMS_REJECTED") return "rejected";
+  if (latestEvent === "DEPARTED_PORT" || latestEvent === "CHECKPOINT_1" || latestEvent === "CHECKPOINT_2") return "transit";
+  if (latestEvent === "ARRIVED_PORT" || latestEvent === "CUSTOMS_ENTRY" || latestEvent === "SHIPMENT_CREATED") return "pending";
+  if (shipment.status === "IN_TRANSIT" || shipment.status === "AT_PORT") return "transit";
+  if (shipment.status === "IN_CUSTOMS" || shipment.status === "CREATED") return "pending";
+  return "pending";
+}
+
+function mapShipment(raw) {
+  const txHash = raw.events?.[raw.events.length - 1]?.txId || raw.shipmentId;
+  return {
+    raw,
+    id: raw.shipmentId,
+    container: raw.containerId,
+    origin: raw.origin,
+    dest: raw.destination,
+    carrier: raw.carrier,
+    cargo: raw.cargoType,
+    weight: raw.weightKg ? (Number(raw.weightKg) / 1000).toFixed(1) : "0.0",
+    eta: raw.estimatedArrival ? raw.estimatedArrival.split("T")[0] : "N/A",
+    status: mapStatus(raw),
+    hash: txHash,
+    block: raw.events?.length || 1,
+    delayRiskScore: raw.delayRiskScore || 0,
+    events: raw.events || [],
+    createdAt: raw.createdAt || raw.events?.[0]?.timestamp || new Date().toISOString(),
+  };
+}
+
+function getFallbackShipments() {
+  return cloneData(FALLBACK_RAW_SHIPMENTS).map((item, index) => {
+    if (!item.events?.length) {
+      item.events = [{ eventType: "SHIPMENT_CREATED", txId: fallbackHash(`${item.shipmentId}-${index}`) }];
+    }
+    return item;
+  });
+}
+
+function upsertShipmentRecord(nextShipment) {
+  if (!nextShipment?.id) return;
+  const index = shipments.findIndex(item => item.id === nextShipment.id);
+  if (index >= 0) {
+    shipments[index] = { ...shipments[index], ...nextShipment };
+  } else {
+    shipments = [nextShipment, ...shipments];
+  }
+  shipments = sortShipments(shipments);
+  persistShipments();
+}
+
+function mergeShipments(preferred = [], incoming = []) {
+  const merged = new Map();
+  [...incoming, ...preferred].forEach(item => {
+    if (!item?.id) return;
+    const existing = merged.get(item.id);
+    if (!existing || shipmentSortTime(item) >= shipmentSortTime(existing)) {
+      merged.set(item.id, item);
+    }
+  });
+  const next = sortShipments(Array.from(merged.values()));
+  persistShipments(next);
+  return next;
+}
+
+function shipmentSortTime(shipment) {
+  const eventTime = shipment?.events?.length
+    ? shipment.events[shipment.events.length - 1]?.timestamp
+    : null;
+  return new Date(eventTime || shipment?.createdAt || shipment?.eta || 0).getTime();
+}
+
+function sortShipments(list = []) {
+  return [...list].sort((a, b) => shipmentSortTime(b) - shipmentSortTime(a));
+}
+
+function persistShipments(next = shipments) {
+  try {
+    window.localStorage.setItem(SHIPMENT_STORAGE_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+function populateSeaPortOptions() {
+  const originSelect = document.getElementById("f-origin");
+  const destinationSelect = document.getElementById("f-dest");
+  if (!originSelect || !destinationSelect) return;
+
+  const options = SEA_PORTS.map((port) => `<option value="${port}">${port}</option>`).join("");
+  originSelect.innerHTML = options;
+  destinationSelect.innerHTML = options;
+
+  if (!originSelect.value) originSelect.value = "Shanghai, CN";
+  if (!destinationSelect.value) destinationSelect.value = "Rotterdam, NL";
+}
+
+function updateLandingStats() {
+  const shipmentCount = shipments.length;
+  const uniquePorts = new Set(
+    shipments.flatMap((shipment) => [shipment.origin, shipment.dest]).filter(Boolean)
+  ).size;
+  const highRiskCount = shipments.filter((shipment) => (shipment.delayRiskScore || 0) >= 0.5).length;
+  const onTimeRate = analyticsSummary?.onTimeRate
+    ?? (shipmentCount ? shipments.filter((shipment) => shipment.status !== "rejected").length / shipmentCount : 0);
+
+  const ticker = document.getElementById("landing-live-ticker");
+  const shipmentsEl = document.getElementById("landing-stat-shipments");
+  const onTimeEl = document.getElementById("landing-stat-ontime");
+  const portsEl = document.getElementById("landing-stat-ports");
+  const alertsEl = document.getElementById("landing-stat-alerts");
+
+  if (ticker) {
+    ticker.innerHTML = `<span class="dot-ping"></span>LIVE: ${shipmentCount} shipments tracked on-chain`;
+  }
+  if (shipmentsEl) shipmentsEl.textContent = String(shipmentCount);
+  if (onTimeEl) onTimeEl.textContent = `${Math.round((onTimeRate || 0) * 100)}%`;
+  if (portsEl) portsEl.textContent = String(uniquePorts);
+  if (alertsEl) alertsEl.textContent = String(highRiskCount);
+}
+
+function restoreCachedShipments() {
+  try {
+    const raw = window.localStorage.getItem(SHIPMENT_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length) shipments = sortShipments(parsed);
+  } catch {}
+}
+
+function persistNotifications(next = notifications) {
+  try {
+    window.localStorage.setItem(NOTIFICATION_STORAGE_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+function restoreCachedNotifications() {
+  try {
+    const raw = window.localStorage.getItem(NOTIFICATION_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length) notifications = parsed;
+  } catch {}
+}
+
+function renderChatbotMessages() {
+  const body = document.getElementById("chatbot-body");
+  if (!body) return;
+  body.innerHTML = chatbotHistory.map((item) => `
+    <div class="chatbot-msg ${item.role === 'user' ? 'user' : 'assistant'}">${item.content}</div>
+  `).join("");
+  body.scrollTop = body.scrollHeight;
+}
+
+function setChatbotStatus(message = "") {
+  const el = document.getElementById("chatbot-status");
+  if (el) el.textContent = message;
+}
+
+function toggleChatbot(force) {
+  chatbotOpen = typeof force === "boolean" ? force : !chatbotOpen;
+  const panel = document.getElementById("chatbot-panel");
+  if (!panel) return;
+  panel.classList.toggle("open", chatbotOpen);
+  if (chatbotOpen) {
+    renderChatbotMessages();
+    const input = document.getElementById("chatbot-input");
+    if (input) input.focus();
+  }
+}
+
+function handleChatbotKey(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    submitChatbot();
+  }
+}
+
+async function submitChatbot() {
+  const input = document.getElementById("chatbot-input");
+  const send = document.getElementById("chatbot-send");
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+
+  chatbotHistory.push({ role: "user", content: message });
+  input.value = "";
+  renderChatbotMessages();
+  setChatbotStatus("Checking shipment records...");
+  if (send) send.disabled = true;
+
+  try {
+    const response = await apiRequest("/chat/grok", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        message,
+        role: currentRole || currentUser?.role || "guest",
+        history: chatbotHistory.slice(-8),
+        context: {
+          user: currentUser?.name || currentUser?.email || "Guest",
+          shipments: shipments.slice(0, 12).map((shipment) => ({
+            id: shipment.id,
+            origin: shipment.origin,
+            dest: shipment.dest,
+            status: shipment.status,
+            carrier: shipment.carrier,
+            eta: shipment.eta,
+          })),
+        },
+      }),
+    });
+    chatbotHistory.push({ role: "assistant", content: response.reply || "I could not generate a response." });
+    setChatbotStatus(response.source === "local-db" ? "Using MongoDB/local shipment data" : `Powered by ${response.model || "AI"}`);
+  } catch (error) {
+    chatbotHistory.push({ role: "assistant", content: `I could not answer right now: ${error.message}` });
+    setChatbotStatus("Chat unavailable");
+  } finally {
+    if (send) send.disabled = false;
+    renderChatbotMessages();
+  }
+}
+
+function deriveAnalyticsFromShipments(list) {
+  const active = list || shipments;
+  const summary = {
+    total: active.length,
+    avgRiskScore: active.length ? active.reduce((sum, s) => sum + (s.delayRiskScore || 0), 0) / active.length : 0,
+    onTimeRate: active.length ? active.filter(s => (s.delayRiskScore || 0) < 0.5 && s.status !== "rejected").length / active.length : 0,
+  };
+  const risk = {
+    low: active.filter(s => (s.delayRiskScore || 0) < 0.35).length,
+    medium: active.filter(s => (s.delayRiskScore || 0) >= 0.35 && (s.delayRiskScore || 0) < 0.7).length,
+    high: active.filter(s => (s.delayRiskScore || 0) >= 0.7).length,
+  };
+  const routes = Object.entries(active.reduce((acc, shipment) => {
+    const route = `${shipment.origin} → ${shipment.dest}`;
+    acc[route] = (acc[route] || 0) + 1;
+    return acc;
+  }, {})).map(([route, count]) => ({ route, count })).sort((a, b) => b.count - a.count);
+  analyticsSummary = summary;
+  analyticsRisk = risk;
+  analyticsRoutes = routes;
+  updateLandingStats();
+}
+
+async function loadShipments() {
+  try {
+    const response = await apiRequest("/shipments");
+    const fetched = (response.data || []).map(mapShipment);
+    shipments = mergeShipments(shipments, fetched);
+    dataMode = "live";
+  } catch (error) {
+    shipments = shipments.length ? shipments : getFallbackShipments().map(mapShipment);
+    persistShipments();
+    dataMode = "fallback";
+  }
+  updateLandingStats();
+  return shipments;
+}
+
+async function loadAnalytics() {
+  const [summaryRes, riskRes, routeRes] = await Promise.allSettled([
+    apiRequest("/analytics/summary"),
+    apiRequest("/analytics/risk-distribution"),
+    apiRequest("/analytics/top-routes"),
+  ]);
+
+  const allFailed = [summaryRes, riskRes, routeRes].every(result => result.status === "rejected");
+  if (allFailed) {
+    deriveAnalyticsFromShipments(shipments);
+    return;
+  }
+
+  analyticsSummary = summaryRes.status === "fulfilled" ? (summaryRes.value.data || {}) : analyticsSummary;
+  analyticsRisk = riskRes.status === "fulfilled" ? (riskRes.value.data || {}) : analyticsRisk;
+  analyticsRoutes = routeRes.status === "fulfilled" ? (routeRes.value.data || []) : analyticsRoutes;
+
+  if (!analyticsSummary || !analyticsRoutes.length || !analyticsRisk) {
+    deriveAnalyticsFromShipments(shipments);
+    return;
+  }
+  updateLandingStats();
+}
+
+async function hydrateData() {
+  await loadShipments();
+  await loadAnalytics();
+}
+
+// ═══════════════════════════════════════════
+// WORLD MAP BG CANVAS (Landing)
+// ═══════════════════════════════════════════
+const wCanvas = document.getElementById('world-canvas');
+const wCtx = wCanvas.getContext('2d');
+let animT = 0;
+let landingGlobe = null;
+const routes = [
+  {from:[0.78,0.38],to:[0.32,0.42]},{from:[0.15,0.38],to:[0.55,0.35]},
+  {from:[0.60,0.45],to:[0.30,0.30]},{from:[0.45,0.55],to:[0.85,0.40]},
+];
+function resizeWCanvas(){wCanvas.width=window.innerWidth;wCanvas.height=window.innerHeight;}
+function lerp(a,b,t){return a+(b-a)*t;}
+function drawWorld(){
+  wCtx.clearRect(0,0,wCanvas.width,wCanvas.height);
+  const W=wCanvas.width,H=wCanvas.height;
+  wCtx.strokeStyle='rgba(30,80,200,0.05)';wCtx.lineWidth=0.5;
+  for(let x=0;x<W;x+=60){wCtx.beginPath();wCtx.moveTo(x,0);wCtx.lineTo(x,H);wCtx.stroke();}
+  for(let y=0;y<H;y+=60){wCtx.beginPath();wCtx.moveTo(0,y);wCtx.lineTo(W,y);wCtx.stroke();}
+  const t=animT%1;
+  routes.forEach((r,i)=>{
+    const phase=(t+i*0.25)%1;
+    const fx=r.from[0]*W,fy=r.from[1]*H,tx=r.to[0]*W,ty=r.to[1]*H;
+    const cx=(fx+tx)/2,cy=Math.min(fy,ty)-80;
+    wCtx.setLineDash([6,4]);wCtx.strokeStyle='rgba(0,180,255,0.12)';wCtx.lineWidth=1;
+    wCtx.beginPath();wCtx.moveTo(fx,fy);wCtx.quadraticCurveTo(cx,cy,tx,ty);wCtx.stroke();wCtx.setLineDash([]);
+    const bt=(t+i*0.25)%1;
+    const bx=lerp(lerp(fx,cx,bt),lerp(cx,tx,bt),bt);
+    const by=lerp(lerp(fy,cy,bt),lerp(cy,ty,bt),bt);
+    wCtx.fillStyle='rgba(0,210,255,0.8)';wCtx.beginPath();wCtx.arc(bx,by,3,0,Math.PI*2);wCtx.fill();
+    const grd=wCtx.createRadialGradient(bx,by,0,bx,by,12);
+    grd.addColorStop(0,'rgba(0,210,255,0.25)');grd.addColorStop(1,'rgba(0,210,255,0)');
+    wCtx.fillStyle=grd;wCtx.beginPath();wCtx.arc(bx,by,12,0,Math.PI*2);wCtx.fill();
+    wCtx.fillStyle='rgba(0,210,255,0.4)';
+    wCtx.beginPath();wCtx.arc(fx,fy,4,0,Math.PI*2);wCtx.fill();
+    wCtx.beginPath();wCtx.arc(tx,ty,4,0,Math.PI*2);wCtx.fill();
+  });
+  animT+=0.002;
+  requestAnimationFrame(drawWorld);
+}
+window.addEventListener('resize',resizeWCanvas);
+resizeWCanvas();drawWorld();
+
+function initLandingGlobe() {
+  const globeRoot = document.getElementById('landing-globe');
+  if (!globeRoot || typeof Globe !== 'function' || landingGlobe) return;
+
+  landingGlobe = Globe({ rendererConfig: { alpha: true, antialias: true } })(globeRoot)
+    .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+    .backgroundColor('rgba(0,0,0,0)')
+    .showAtmosphere(true)
+    .atmosphereColor('#5dd6ff')
+    .atmosphereAltitude(0.16);
+
+  landingGlobe.pointOfView({ lat: 20, lng: 0, altitude: 2.2 });
+
+  const controls = landingGlobe.controls();
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.55;
+  controls.enableZoom = false;
+  controls.enablePan = false;
+}
+
+initLandingGlobe();
+
+// ═══════════════════════════════════════════
+// 3D SHIPPER SCENE — Warehouse → Truck → Port
+// ═══════════════════════════════════════════
+let shipperAnim = null;
+function initShipperScene() {
+  const canvas = document.getElementById('shipper-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  const W = canvas.width, H = canvas.height;
+  let t = 0;
+  // Box positions on conveyor
+  let boxes = [
+    {x:0.05, color:'#1a6cf5', label:'CF-001'},
+    {x:-0.3, color:'#c0392b', label:'CF-004'},
+    {x:-0.65, color:'#f39c12', label:'CF-002'},
+  ];
+  // Forklift position
+  let forkX = 0;
+
+  function drawScene() {
+    ctx.clearRect(0,0,W,H);
+    // Sky gradient
+    const skyGrad = ctx.createLinearGradient(0,0,0,H*0.6);
+    skyGrad.addColorStop(0,'#020812');
+    skyGrad.addColorStop(1,'#051428');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0,0,W,H*0.6);
+    // Floor
+    const floorGrad = ctx.createLinearGradient(0,H*0.6,0,H);
+    floorGrad.addColorStop(0,'#0a1428');
+    floorGrad.addColorStop(1,'#060e1a');
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0,H*0.6,W,H*0.4);
+
+    // 3D perspective floor grid
+    ctx.strokeStyle = 'rgba(0,120,255,0.08)';
+    ctx.lineWidth = 1;
+    const vp = {x:W/2, y:H*0.6}; // vanishing point
+    for(let i=0;i<=20;i++){
+      const x = (i/20)*W;
+      ctx.beginPath(); ctx.moveTo(vp.x,vp.y); ctx.lineTo(x,H); ctx.stroke();
+    }
+    for(let row=0;row<8;row++){
+      const frac = row/8;
+      const y = vp.y + (H-vp.y)*frac;
+      const xl = vp.x - (vp.x)*frac;
+      const xr = vp.x + (W-vp.x)*frac;
+      ctx.beginPath(); ctx.moveTo(xl,y); ctx.lineTo(xr,y); ctx.stroke();
+    }
+
+    // Warehouse building (left)
+    const whX = W*0.03, whW = W*0.28, whH = H*0.45, whY = H*0.6-whH;
+    // Draw in 3D with side panel
+    const sideW = W*0.04;
+    // Right side (dark)
+    ctx.fillStyle = '#061228';
+    ctx.beginPath();
+    ctx.moveTo(whX+whW, whY);
+    ctx.lineTo(whX+whW+sideW, whY+H*0.03);
+    ctx.lineTo(whX+whW+sideW, H*0.6+H*0.03);
+    ctx.lineTo(whX+whW, H*0.6);
+    ctx.fill();
+    // Front face
+    const whGrad = ctx.createLinearGradient(whX,whY,whX,H*0.6);
+    whGrad.addColorStop(0,'#0c1e40');
+    whGrad.addColorStop(1,'#0a1830');
+    ctx.fillStyle = whGrad;
+    ctx.fillRect(whX, whY, whW, whH);
+    // Top face
+    ctx.fillStyle = '#1a3060';
+    ctx.beginPath();
+    ctx.moveTo(whX,whY); ctx.lineTo(whX+whW,whY);
+    ctx.lineTo(whX+whW+sideW,whY+H*0.03); ctx.lineTo(whX+sideW,whY+H*0.03);
+    ctx.fill();
+    // Roof stripe
+    ctx.fillStyle = 'rgba(0,180,255,0.15)';
+    ctx.fillRect(whX, whY, whW, 4);
+    // Warehouse label
+    ctx.fillStyle = 'rgba(0,212,255,0.5)';
+    ctx.font = `bold ${H*0.04}px Syne`;
+    ctx.fillText('WAREHOUSE', whX+10, whY+H*0.06);
+    // Windows (grid)
+    for(let wi=0;wi<4;wi++) for(let wj=0;wj<2;wj++){
+      const wx=whX+20+wi*(whW/4.5), wy=whY+H*0.1+wj*(H*0.14);
+      const ww=whW*0.18, wh=H*0.1;
+      ctx.fillStyle = Math.random() > 0.97 ? 'rgba(255,220,100,0.3)' : 'rgba(0,180,255,0.12)';
+      ctx.fillRect(wx,wy,ww,wh);
+      ctx.strokeStyle='rgba(0,180,255,0.2)';ctx.lineWidth=1;
+      ctx.strokeRect(wx,wy,ww,wh);
+    }
+    // Dock door
+    ctx.fillStyle='rgba(0,80,200,0.2)';
+    ctx.fillRect(whX+whW*0.35, H*0.6-H*0.2, whW*0.25, H*0.2);
+    ctx.strokeStyle='rgba(0,180,255,0.3)';ctx.lineWidth=2;
+    ctx.strokeRect(whX+whW*0.35, H*0.6-H*0.2, whW*0.25, H*0.2);
+
+    // Port structure (right)
+    const portX = W*0.72, portW = W*0.26, portH = H*0.38, portY = H*0.6-portH;
+    const portGrad = ctx.createLinearGradient(portX,portY,portX,H*0.6);
+    portGrad.addColorStop(0,'#0d1e3a');
+    portGrad.addColorStop(1,'#091428');
+    ctx.fillStyle = portGrad;
+    ctx.fillRect(portX, portY, portW, portH);
+    ctx.fillStyle='rgba(0,212,255,0.4)';
+    ctx.font=`bold ${H*0.04}px Syne`;
+    ctx.fillText('PORT TERMINAL', portX+8, portY+H*0.06);
+    ctx.strokeStyle='rgba(0,180,255,0.2)';ctx.lineWidth=1;
+    ctx.strokeRect(portX,portY,portW,portH);
+
+    // Crane at port
+    const craneBaseX = portX + portW*0.6;
+    const craneBaseY = H*0.6;
+    const craneH = portH * 1.3;
+    ctx.strokeStyle = 'rgba(0,200,255,0.5)';
+    ctx.lineWidth = 4;
+    // Vertical
+    ctx.beginPath(); ctx.moveTo(craneBaseX,craneBaseY); ctx.lineTo(craneBaseX,craneBaseY-craneH); ctx.stroke();
+    // Horizontal arm
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(craneBaseX-portW*0.5,craneBaseY-craneH); ctx.lineTo(craneBaseX+portW*0.15,craneBaseY-craneH); ctx.stroke();
+    // Crane cable animation
+    const cableY = craneBaseY-craneH + (craneH*0.5)*(0.5+0.5*Math.sin(t*0.02));
+    ctx.strokeStyle='rgba(0,212,255,0.6)';ctx.lineWidth=1.5;ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(craneBaseX-portW*0.2,craneBaseY-craneH); ctx.lineTo(craneBaseX-portW*0.2,cableY); ctx.stroke();
+    ctx.setLineDash([]);
+    // Hanging container
+    const contW = portW*0.18, contH = H*0.08;
+    ctx.fillStyle = ['#1a6cf5','#c0392b','#f39c12','#27ae60'][Math.floor(t*0.01)%4];
+    ctx.fillRect(craneBaseX-portW*0.2-contW/2, cableY, contW, contH);
+    ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=1;
+    ctx.strokeRect(craneBaseX-portW*0.2-contW/2, cableY, contW, contH);
+    // Stripe on container
+    ctx.fillStyle='rgba(255,255,255,0.1)';
+    ctx.fillRect(craneBaseX-portW*0.2-contW/2, cableY+contH*0.35, contW, contH*0.1);
+
+    // Road/conveyor belt
+    const roadY = H*0.63;
+    ctx.fillStyle='rgba(20,40,80,0.7)';
+    ctx.fillRect(0,roadY,W,H*0.1);
+    // Road markings
+    ctx.strokeStyle='rgba(255,200,0,0.3)';ctx.lineWidth=2;ctx.setLineDash([20,15]);
+    ctx.beginPath();ctx.moveTo(0,roadY+H*0.05);ctx.lineTo(W,roadY+H*0.05);ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Conveyor belt inside warehouse
+    const beltY = H*0.59;
+    ctx.fillStyle='rgba(60,40,120,0.5)';ctx.fillRect(whX+whW*0.3,beltY,whW*0.4,H*0.015);
+    ctx.strokeStyle='rgba(100,80,200,0.4)';ctx.lineWidth=1;
+    for(let bi=0;bi<8;bi++){
+      const bx = whX+whW*0.3 + ((bi/8)*whW*0.4+(t*2)%whW*0.4)%(whW*0.4);
+      ctx.beginPath();ctx.moveTo(bx,beltY);ctx.lineTo(bx,beltY+H*0.015);ctx.stroke();
+    }
+
+    // Moving boxes (warehouse export)
+    boxes.forEach((box,i)=>{
+      const bx = (box.x * W + t*0.8) % (W*1.3) - W*0.1;
+      if(bx < W*0.72 && bx > whX){
+        const by = roadY + H*0.01;
+        const bw = W*0.045, bh = H*0.06;
+        // Shadow
+        ctx.fillStyle='rgba(0,0,0,0.3)';
+        ctx.beginPath();ctx.ellipse(bx+bw/2,by+bh+3,bw/2,4,0,0,Math.PI*2);ctx.fill();
+        // Box body
+        ctx.fillStyle=box.color;ctx.fillRect(bx,by,bw,bh);
+        // Top face (3D)
+        ctx.fillStyle=lighten(box.color,0.3);
+        ctx.beginPath();
+        ctx.moveTo(bx,by);ctx.lineTo(bx+bw,by);
+        ctx.lineTo(bx+bw+bw*0.2,by-bh*0.2);ctx.lineTo(bx+bw*0.2,by-bh*0.2);
+        ctx.fill();
+        // Side face (dark)
+        ctx.fillStyle=darken(box.color,0.5);
+        ctx.beginPath();
+        ctx.moveTo(bx+bw,by);ctx.lineTo(bx+bw+bw*0.2,by-bh*0.2);
+        ctx.lineTo(bx+bw+bw*0.2,by-bh*0.2+bh);ctx.lineTo(bx+bw,by+bh);
+        ctx.fill();
+        // Label
+        ctx.fillStyle='rgba(255,255,255,0.8)';
+        ctx.font=`bold ${H*0.025}px JetBrains Mono`;
+        ctx.fillText(box.label,bx+2,by+bh*0.55);
+      }
+    });
+
+    // Truck
+    const truckX = (W*0.25 + t*0.6) % (W*1.1) - W*0.08;
+    drawTruck(ctx, truckX, roadY-H*0.02, W*0.1, H*0.08);
+
+    // Floating particles / data links
+    for(let pi=0;pi<6;pi++){
+      const px = (W*0.2+pi*W*0.12 + t*0.5) % W;
+      const py = H*0.45 + Math.sin(t*0.03+pi)*H*0.05;
+      ctx.fillStyle='rgba(0,212,255,0.4)';
+      ctx.beginPath();ctx.arc(px,py,2,0,Math.PI*2);ctx.fill();
+      // Data link line
+      if(pi<5){
+        const nx = (W*0.2+(pi+1)*W*0.12 + t*0.5) % W;
+        const ny = H*0.45 + Math.sin(t*0.03+pi+1)*H*0.05;
+        ctx.strokeStyle='rgba(0,180,255,0.1)';ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(nx,ny);ctx.stroke();
+      }
+    }
+
+    // Stars
+    for(let si=0;si<30;si++){
+      const sx = (si*W/29);
+      const sy = (si*H/31)*0.5;
+      const sa = 0.3+0.5*Math.sin(t*0.05+si);
+      ctx.fillStyle=`rgba(200,220,255,${sa})`;
+      ctx.beginPath();ctx.arc(sx,sy,0.8,0,Math.PI*2);ctx.fill();
+    }
+
+    // Ambient light glow (warehouse)
+    const glow = ctx.createRadialGradient(whX+whW*0.5,H*0.6,0,whX+whW*0.5,H*0.6,W*0.2);
+    glow.addColorStop(0,'rgba(0,100,255,0.04)');
+    glow.addColorStop(1,'rgba(0,100,255,0)');
+    ctx.fillStyle=glow;ctx.fillRect(0,0,W,H);
+
+    t++;
+    shipperAnim = requestAnimationFrame(drawScene);
+  }
+  drawScene();
+}
+
+function drawTruck(ctx, x, y, w, h) {
+  // Cab
+  ctx.fillStyle='#1a3060';
+  ctx.fillRect(x+w*0.55, y+h*0.1, w*0.42, h*0.75);
+  // Windshield
+  ctx.fillStyle='rgba(0,200,255,0.25)';
+  ctx.fillRect(x+w*0.58, y+h*0.15, w*0.35, h*0.35);
+  // Trailer
+  ctx.fillStyle='#0d2050';
+  ctx.fillRect(x, y+h*0.2, w*0.58, h*0.65);
+  ctx.strokeStyle='rgba(0,180,255,0.3)';ctx.lineWidth=1;
+  ctx.strokeRect(x, y+h*0.2, w*0.58, h*0.65);
+  // Cargo Intel logo
+  ctx.fillStyle='rgba(0,180,255,0.6)';
+  ctx.font=`bold ${h*0.15}px Syne`;
+  ctx.fillText('CF', x+w*0.1, y+h*0.6);
+  // Wheels
+  [[x+w*0.1,y+h*0.85],[x+w*0.38,y+h*0.85],[x+w*0.65,y+h*0.85],[x+w*0.82,y+h*0.85]].forEach(([wx,wy])=>{
+    ctx.fillStyle='#111';ctx.beginPath();ctx.arc(wx,wy,h*0.1,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(100,100,100,0.5)';ctx.beginPath();ctx.arc(wx,wy,h*0.06,0,Math.PI*2);ctx.fill();
+  });
+  // Headlights
+  ctx.fillStyle='rgba(255,220,100,0.6)';
+  ctx.beginPath();ctx.arc(x+w*0.97,y+h*0.4,h*0.05,0,Math.PI*2);ctx.fill();
+  const light = ctx.createRadialGradient(x+w*0.97,y+h*0.4,0,x+w*0.97,y+h*0.4,w*0.3);
+  light.addColorStop(0,'rgba(255,220,100,0.1)');light.addColorStop(1,'rgba(255,220,100,0)');
+  ctx.fillStyle=light;ctx.beginPath();ctx.arc(x+w*0.97,y+h*0.4,w*0.3,0,Math.PI*2);ctx.fill();
+}
+
+function lighten(hex, amt) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgb(${Math.min(255,r+amt*100)},${Math.min(255,g+amt*100)},${Math.min(255,b+amt*100)})`;
+}
+function darken(hex, amt) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgb(${Math.max(0,r-amt*100)},${Math.max(0,g-amt*100)},${Math.max(0,b-amt*100)})`;
+}
+
+// ═══════════════════════════════════════════
+// 3D CARRIER SCENE — Ocean + Ship (WebGL-style via Canvas)
+// ═══════════════════════════════════════════
+let carrierAnim = null;
+let waveTime = 0;
+let lightning = { active:false, x:0, y:0, timer:0 };
+let rain = [];
+let stormIntensity = 0;
+
+function initCarrierScene() {
+  const canvas = document.getElementById('carrier-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+
+  // Init rain drops
+  for(let i=0;i<200;i++) rain.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height, speed:8+Math.random()*6, len:10+Math.random()*15});
+
+  function drawOceanScene() {
+    const W = canvas.width, H = canvas.height;
+    const IS = stormIntensity; // 0=calm, 1=storm
+
+    // Sky
+    const skyGrad = ctx.createLinearGradient(0,0,0,H*0.55);
+    if(IS < 0.5) {
+      skyGrad.addColorStop(0, `rgba(3,8,22,1)`);
+      skyGrad.addColorStop(0.6, `rgba(5,20,55,1)`);
+      skyGrad.addColorStop(1, `rgba(0,40,100,0.8)`);
+    } else {
+      const d = IS;
+      skyGrad.addColorStop(0, `rgba(2,3,8,1)`);
+      skyGrad.addColorStop(0.5, `rgba(10,8,15,1)`);
+      skyGrad.addColorStop(1, `rgba(15,10,20,0.9)`);
+    }
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0,0,W,H*0.55);
+
+    // Stars (disappear in storm)
+    if(IS < 0.7) {
+      for(let i=0;i<50;i++){
+        const sx = (i*W/47)%W;
+        const sy = (i*H/53)*0.4;
+        const sa = (1-IS*1.2) * (0.4+0.5*Math.sin(waveTime*0.05+i));
+        if(sa>0){ctx.fillStyle=`rgba(200,220,255,${sa})`;ctx.beginPath();ctx.arc(sx,sy,0.8,0,Math.PI*2);ctx.fill();}
+      }
+    }
+
+    // Storm clouds
+    if(IS > 0.2) {
+      for(let ci=0;ci<5;ci++){
+        const cx = (ci*W*0.22 + waveTime*0.3*(ci%2===0?1:-1))%W;
+        const cy = H*0.05+ci*H*0.04;
+        const cr = 60+ci*30;
+        const cAlpha = Math.min(1,(IS-0.2)*1.5)*0.7;
+        const cGrad = ctx.createRadialGradient(cx,cy,0,cx,cy,cr);
+        cGrad.addColorStop(0,`rgba(20,15,30,${cAlpha})`);
+        cGrad.addColorStop(1,'rgba(20,15,30,0)');
+        ctx.fillStyle=cGrad;
+        ctx.beginPath();ctx.ellipse(cx,cy,cr,cr*0.4,0,0,Math.PI*2);ctx.fill();
+      }
+    }
+
+    // Moon / sun
+    if(IS < 0.5) {
+      const moonGrad = ctx.createRadialGradient(W*0.8,H*0.08,0,W*0.8,H*0.08,30);
+      moonGrad.addColorStop(0,'rgba(200,220,255,0.3)');
+      moonGrad.addColorStop(1,'rgba(200,220,255,0)');
+      ctx.fillStyle=moonGrad;
+      ctx.beginPath();ctx.arc(W*0.8,H*0.08,30,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='rgba(220,230,255,0.5)';
+      ctx.beginPath();ctx.arc(W*0.8,H*0.08,12,0,Math.PI*2);ctx.fill();
+    }
+
+    // Horizon glow
+    const horizGlow = ctx.createLinearGradient(0,H*0.45,0,H*0.6);
+    if(IS < 0.5) {
+      horizGlow.addColorStop(0,'rgba(0,80,200,0.0)');
+      horizGlow.addColorStop(0.7,'rgba(0,100,220,0.15)');
+      horizGlow.addColorStop(1,'rgba(0,140,255,0.2)');
+    } else {
+      horizGlow.addColorStop(0,'rgba(0,0,0,0)');
+      horizGlow.addColorStop(1,'rgba(30,0,30,0.3)');
+    }
+    ctx.fillStyle=horizGlow;
+    ctx.fillRect(0,H*0.45,W,H*0.15);
+
+    // 3D Ocean surface — layered waves
+    const waveAmp = 12 + IS * 50;
+    const waveAmp2 = 6 + IS * 30;
+    const waveSpeed = 1 + IS * 2.5;
+
+    // Deep water base
+    const deepGrad = ctx.createLinearGradient(0,H*0.52,0,H);
+    if(IS < 0.5) {
+      deepGrad.addColorStop(0,'#001a4a');
+      deepGrad.addColorStop(0.3,'#001535');
+      deepGrad.addColorStop(1,'#000a1f');
+    } else {
+      deepGrad.addColorStop(0,'#08020f');
+      deepGrad.addColorStop(0.3,'#04010a');
+      deepGrad.addColorStop(1,'#020008');
+    }
+    ctx.fillStyle=deepGrad;
+    ctx.fillRect(0,H*0.52,W,H*0.48);
+
+    // Wave layers — draw back to front for depth
+    const numLayers = 12;
+    for(let layer = numLayers-1; layer >= 0; layer--) {
+      const frac = layer/numLayers;
+      const layerY = H*0.52 + frac*(H*0.35);
+      const amp = waveAmp * frac;
+      const freq = 2 + frac*4;
+      const phaseOff = layer*0.4;
+      const speed = waveSpeed*(0.5+frac*0.7);
+
+      // Wave color based on depth
+      const baseBlue = IS<0.5 ? `rgba(0,${60+frac*80},${180+frac*50}` : `rgba(${frac*30},${frac*20},${frac*60}`;
+      const waveAlpha = 0.15 + frac*0.25;
+
+      ctx.beginPath();
+      ctx.moveTo(0, layerY + H*0.05);
+      for(let x=0;x<=W;x+=4) {
+        const y = layerY + Math.sin((x/W)*Math.PI*freq + waveTime*speed*0.06 + phaseOff) * amp
+                         + Math.sin((x/W)*Math.PI*(freq*1.7) + waveTime*speed*0.04 + phaseOff*1.3) * amp*0.4;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
+      ctx.fillStyle=`${baseBlue},${waveAlpha})`;
+      ctx.fill();
+
+      // Wave crest highlight (white foam)
+      if(layer >= numLayers-4) {
+        ctx.beginPath();
+        for(let x=0;x<=W;x+=4){
+          const y = layerY + Math.sin((x/W)*Math.PI*freq + waveTime*speed*0.06 + phaseOff)*amp
+                           + Math.sin((x/W)*Math.PI*(freq*1.7) + waveTime*speed*0.04 + phaseOff*1.3)*amp*0.4;
+          if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        }
+        const foamAlpha = IS<0.5 ? 0.06+frac*0.1 : 0.12+IS*0.2;
+        ctx.strokeStyle=`rgba(150,200,255,${foamAlpha})`;
+        ctx.lineWidth = 1+frac*2;
+        ctx.stroke();
+      }
+    }
+
+    // 3D Ship model
+    const shipBaseY = H*0.6 + Math.sin(waveTime*0.04)*8*(1+IS*3);
+    const shipRoll = Math.sin(waveTime*0.03)*(IS<0.5?0.02:0.08+IS*0.1);
+    const shipX = W*0.42;
+    drawShip3D(ctx, shipX, shipBaseY, W*0.22, H*0.22, shipRoll, IS);
+
+    // Ocean light reflections
+    if(IS < 0.7) {
+      for(let ri=0;ri<8;ri++){
+        const rx = W*0.1+ri*W*0.1;
+        const ry = H*0.65 + ri*H*0.02;
+        const rLen = 20+ri*8;
+        const rAlpha = 0.05+0.1*Math.sin(waveTime*0.1+ri);
+        ctx.strokeStyle=`rgba(100,180,255,${rAlpha})`;
+        ctx.lineWidth=1+ri*0.3;
+        ctx.beginPath();ctx.moveTo(rx-rLen,ry);ctx.lineTo(rx+rLen,ry);ctx.stroke();
+      }
+    }
+
+    // Rain
+    if(IS > 0.3) {
+      ctx.strokeStyle=`rgba(150,180,255,${(IS-0.3)*0.6})`;
+      ctx.lineWidth=0.8;
+      rain.forEach(drop=>{
+        ctx.beginPath();
+        ctx.moveTo(drop.x, drop.y);
+        ctx.lineTo(drop.x+drop.len*0.3, drop.y+drop.len);
+        ctx.stroke();
+        drop.y += drop.speed*(1+IS*2);
+        drop.x += 1.5+IS*3;
+        if(drop.y > H){drop.y=-20;drop.x=Math.random()*W;}
+        if(drop.x > W){drop.x=0;}
+      });
+    }
+
+    // Lightning
+    if(IS > 0.6) {
+      lightning.timer--;
+      if(lightning.timer<=0){
+        if(Math.random()<0.03*(IS)){
+          lightning.active=true;
+          lightning.x=W*0.2+Math.random()*W*0.6;
+          lightning.y=0;
+          lightning.timer=5+Math.floor(Math.random()*80/IS);
+        }
+      }
+      if(lightning.active && lightning.timer>0){
+        drawLightning(ctx, lightning.x, 0, lightning.x+(-50+Math.random()*100), H*0.4);
+        ctx.fillStyle=`rgba(255,255,255,${0.05*lightning.timer})`;
+        ctx.fillRect(0,0,W,H);
+        lightning.active = lightning.timer>0;
+      }
+    }
+
+    // Storm vignette
+    if(IS > 0.2) {
+      const vig = ctx.createRadialGradient(W/2,H/2,H*0.2,W/2,H/2,H*0.8);
+      vig.addColorStop(0,'rgba(0,0,0,0)');
+      vig.addColorStop(1,`rgba(0,0,0,${IS*0.6})`);
+      ctx.fillStyle=vig;
+      ctx.fillRect(0,0,W,H);
+    }
+
+    // Storm status overlay
+    if(IS > 0.5) {
+      ctx.fillStyle=`rgba(255,40,40,${(IS-0.5)*0.5})`;
+      ctx.font=`bold ${H*0.04}px JetBrains Mono`;
+      ctx.fillText('⚠ STORM WARNING — SEVERITY: ' + (IS>0.85?'CRITICAL':IS>0.65?'HIGH':'MODERATE'), W*0.05, H*0.95);
+    }
+
+    waveTime++;
+    // Slowly ramp storm intensity
+    if(stormMode && stormIntensity < 1) stormIntensity = Math.min(1, stormIntensity+0.005);
+    if(!stormMode && stormIntensity > 0) stormIntensity = Math.max(0, stormIntensity-0.008);
+
+    carrierAnim = requestAnimationFrame(drawOceanScene);
+  }
+  drawOceanScene();
+}
+
+function drawShip3D(ctx, x, y, w, h, roll, stormLevel) {
+  ctx.save();
+  ctx.translate(x + w*0.5, y);
+  ctx.rotate(roll);
+
+  // Ship hull (main body)
+  const hullGrad = ctx.createLinearGradient(-w*0.5,0,-w*0.5,h*0.5);
+  hullGrad.addColorStop(0,'#1a3060');
+  hullGrad.addColorStop(0.5,'#0d2040');
+  hullGrad.addColorStop(1,'#05101f');
+  ctx.fillStyle=hullGrad;
+
+  // Hull shape (ship silhouette from front)
+  ctx.beginPath();
+  ctx.moveTo(-w*0.5, -h*0.05);
+  ctx.quadraticCurveTo(-w*0.55, h*0.2, -w*0.35, h*0.4);
+  ctx.lineTo(w*0.35, h*0.4);
+  ctx.quadraticCurveTo(w*0.58, h*0.2, w*0.5, -h*0.05);
+  ctx.lineTo(w*0.45, -h*0.08);
+  ctx.lineTo(-w*0.45, -h*0.08);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='rgba(0,150,255,0.3)';ctx.lineWidth=1.5;ctx.stroke();
+
+  // Waterline
+  ctx.strokeStyle='rgba(200,230,255,0.3)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(-w*0.5,-h*0.05);ctx.lineTo(w*0.5,-h*0.05);ctx.stroke();
+
+  // Main deck
+  ctx.fillStyle='#0f2040';
+  ctx.fillRect(-w*0.45,-h*0.35,w*0.9,h*0.3);
+  ctx.strokeStyle='rgba(0,180,255,0.2)';ctx.lineWidth=1;
+  ctx.strokeRect(-w*0.45,-h*0.35,w*0.9,h*0.3);
+
+  // Containers on deck (colorful stack)
+  const containerColors = ['#c0392b','#1a6cf5','#f39c12','#27ae60','#8e44ad','#2980b9','#e74c3c','#16a085'];
+  const rows = 2, cols = 5;
+  const cw = w*0.14, ch = h*0.08;
+  for(let row=0;row<rows;row++){
+    for(let col=0;col<cols;col++){
+      const cx = -w*0.4 + col*(cw+2);
+      const cy = -h*0.35 - (row+1)*ch;
+      ctx.fillStyle = containerColors[(row*cols+col)%containerColors.length];
+      ctx.fillRect(cx, cy, cw, ch);
+      // 3D top
+      ctx.fillStyle = lightenRGB(containerColors[(row*cols+col)%containerColors.length], 30);
+      ctx.beginPath();
+      ctx.moveTo(cx,cy);ctx.lineTo(cx+cw,cy);ctx.lineTo(cx+cw+cw*0.15,cy-ch*0.25);ctx.lineTo(cx+cw*0.15,cy-ch*0.25);ctx.fill();
+      // Stripe
+      ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(cx,cy+ch*0.35,cw,ch*0.08);
+      ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=0.5;ctx.strokeRect(cx,cy,cw,ch);
+    }
+  }
+
+  // Bridge / superstructure
+  ctx.fillStyle='#162840';
+  ctx.fillRect(-w*0.2,-h*0.7,w*0.4,h*0.35);
+  ctx.strokeStyle='rgba(0,180,255,0.25)';ctx.lineWidth=1;
+  ctx.strokeRect(-w*0.2,-h*0.7,w*0.4,h*0.35);
+  // Bridge windows
+  for(let bw=0;bw<4;bw++){
+    const bx = -w*0.17+bw*w*0.09;
+    ctx.fillStyle='rgba(0,200,255,0.35)';
+    ctx.fillRect(bx,-h*0.65,w*0.06,h*0.1);
+  }
+  // Smokestack
+  ctx.fillStyle='#1a3060';
+  ctx.fillRect(w*0.08,-h*0.85,w*0.1,h*0.2);
+  // Smoke
+  for(let si=0;si<4;si++){
+    const sa = 0.15-si*0.03;
+    ctx.fillStyle=`rgba(150,150,180,${Math.max(0,sa)})`;
+    ctx.beginPath();ctx.arc(w*0.13+si*2,-h*0.88-si*h*0.06,3+si*3,0,Math.PI*2);ctx.fill();
+  }
+  // Radar dish
+  ctx.strokeStyle='rgba(0,220,255,0.5)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(0,-h*0.85);ctx.lineTo(0,-h*0.98);ctx.stroke();
+  ctx.beginPath();ctx.arc(0,-h*0.98,w*0.05,Math.PI*1.2,Math.PI*1.8);ctx.stroke();
+  // Navigation lights
+  const navBlink = Math.sin(waveTime*0.1)>0;
+  ctx.fillStyle=navBlink?'rgba(255,0,0,0.8)':'rgba(255,0,0,0.2)';
+  ctx.beginPath();ctx.arc(-w*0.47,-h*0.1,4,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=navBlink?'rgba(0,255,0,0.2)':'rgba(0,255,0,0.8)';
+  ctx.beginPath();ctx.arc(w*0.47,-h*0.1,4,0,Math.PI*2);ctx.fill();
+
+  // Wake foam
+  ctx.restore();
+  ctx.strokeStyle=`rgba(180,220,255,${0.3-stormLevel*0.1})`;
+  ctx.lineWidth=2;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.moveTo(x-w*0.01,y+h*0.35);ctx.quadraticCurveTo(x-w*0.3,y+h*0.5,x-w*0.8,y+h*0.25);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x+w*0.22,y+h*0.35);ctx.quadraticCurveTo(x+w*0.5,y+h*0.5,x+w*0.9,y+h*0.25);ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function lightenRGB(hex, amt) {
+  const r = Math.min(255,parseInt(hex.slice(1,3),16)+amt);
+  const g = Math.min(255,parseInt(hex.slice(3,5),16)+amt);
+  const b = Math.min(255,parseInt(hex.slice(5,7),16)+amt);
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawLightning(ctx, x1, y1, x2, y2) {
+  if(y2-y1 < 20) {
+    ctx.strokeStyle='rgba(180,180,255,0.9)';
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    return;
+  }
+  const mx = (x1+x2)/2 + (-60+Math.random()*120);
+  const my = (y1+y2)/2;
+  drawLightning(ctx,x1,y1,mx,my);
+  drawLightning(ctx,mx,my,x2,y2);
+  // Branch
+  if(Math.random()<0.4){
+    drawLightning(ctx,mx,my,mx+(-80+Math.random()*160),my+(y2-y1)*0.4);
+  }
+}
+
+function toggleWeather() {
+  stormMode = !stormMode;
+  const btn = document.getElementById('weather-btn');
+  if(stormMode){
+    btn.textContent='⛈ Storm Mode';
+    btn.className='weather-btn storm';
+    document.getElementById('alert-count').textContent='8';
+    showToast('⛈','Storm mode activated — sea state CRITICAL');
+  } else {
+    btn.textContent='🌤 Calm Seas';
+    btn.className='weather-btn calm';
+    document.getElementById('alert-count').textContent='3';
+    showToast('🌤','Weather clearing — sea state normal');
+  }
+}
+
+// ═══════════════════════════════════════════
+// 3D CUSTOMS SCENE — Port Terminal
+// ═══════════════════════════════════════════
+let customsAnim = null;
+let customsT = 0;
+let scanBeam = 0;
+let containerQueue = [
+  {x:-0.1,color:'#1a6cf5',id:'CF-001',status:'scanning'},
+  {x:-0.45,color:'#c0392b',id:'CF-004',status:'pending'},
+  {x:-0.8,color:'#f39c12',id:'CF-002',status:'pending'},
+];
+let approvedContainers = [];
+
+function initCustomsScene() {
+  const canvas = document.getElementById('customs-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  const W = canvas.width, H = canvas.height;
+
+  function drawCustomsScene() {
+    ctx.clearRect(0,0,W,H);
+
+    // Background
+    const bgGrad = ctx.createLinearGradient(0,0,0,H);
+    bgGrad.addColorStop(0,'#020810');
+    bgGrad.addColorStop(0.6,'#060e20');
+    bgGrad.addColorStop(1,'#0a1a35');
+    ctx.fillStyle=bgGrad;ctx.fillRect(0,0,W,H);
+
+    // Grid floor
+    const vp={x:W/2,y:H*0.55};
+    ctx.strokeStyle='rgba(0,100,200,0.07)';ctx.lineWidth=1;
+    for(let i=0;i<=16;i++){
+      const x=(i/16)*W;
+      ctx.beginPath();ctx.moveTo(vp.x,vp.y);ctx.lineTo(x,H);ctx.stroke();
+    }
+    for(let row=0;row<6;row++){
+      const frac=row/6;const y=vp.y+(H-vp.y)*frac;
+      const xl=vp.x-vp.x*frac,xr=vp.x+(W-vp.x)*frac;
+      ctx.beginPath();ctx.moveTo(xl,y);ctx.lineTo(xr,y);ctx.stroke();
+    }
+
+    // Port building background
+    ctx.fillStyle='rgba(8,16,35,0.9)';
+    ctx.fillRect(0,0,W,H*0.55);
+
+    // Building structures
+    const buildings = [
+      {x:0.02,w:0.18,h:0.48,color:'#091630'},
+      {x:0.22,w:0.12,h:0.35,color:'#0a1835'},
+      {x:0.65,w:0.15,h:0.42,color:'#091630'},
+      {x:0.82,w:0.17,h:0.38,color:'#0a1835'},
+    ];
+    buildings.forEach(b=>{
+      ctx.fillStyle=b.color;
+      ctx.fillRect(b.x*W,H*0.55-b.h*H,b.w*W,b.h*H);
+      ctx.strokeStyle='rgba(0,100,200,0.12)';ctx.lineWidth=1;
+      ctx.strokeRect(b.x*W,H*0.55-b.h*H,b.w*W,b.h*H);
+      // windows
+      const rows=4,cols=3;
+      for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+        const wx=b.x*W+b.w*W*(c+0.15)/(cols);
+        const wy=H*0.55-b.h*H+b.h*H*(r+0.2)/(rows+0.5);
+        const ww=b.w*W*0.15,wh=b.h*H*0.1;
+        const lit=Math.sin(customsT*0.02+r*3+c*7+b.x*10)>0.3;
+        ctx.fillStyle=lit?'rgba(255,220,100,0.2)':'rgba(0,180,255,0.06)';
+        ctx.fillRect(wx,wy,ww,wh);
+      }
+    });
+
+    // Cranes (2 big ones)
+    const cranes = [{x:0.35,h:0.75},{x:0.58,h:0.65}];
+    cranes.forEach((cr,ci)=>{
+      const cx=cr.x*W, baseY=H*0.55, crH=cr.h*H;
+      ctx.strokeStyle='rgba(0,200,255,0.45)';
+      // vertical
+      ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(cx,baseY);ctx.lineTo(cx,baseY-crH);ctx.stroke();
+      // horizontal
+      ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(cx-W*0.13,baseY-crH);ctx.lineTo(cx+W*0.08,baseY-crH);ctx.stroke();
+      // diagonal support
+      ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cx,baseY-crH*0.7);ctx.lineTo(cx-W*0.1,baseY-crH);ctx.stroke();
+      // cable
+      const trolleyX = cx-W*0.07 + Math.sin(customsT*0.02+ci*2)*W*0.04;
+      const cableLen = crH*(0.4+0.35*Math.abs(Math.sin(customsT*0.015+ci)));
+      ctx.strokeStyle='rgba(0,212,255,0.5)';ctx.lineWidth=1.5;ctx.setLineDash([3,3]);
+      ctx.beginPath();ctx.moveTo(trolleyX,baseY-crH);ctx.lineTo(trolleyX,baseY-crH+cableLen);ctx.stroke();
+      ctx.setLineDash([]);
+      // trolley
+      ctx.fillStyle='rgba(0,180,255,0.5)';ctx.fillRect(trolleyX-8,baseY-crH-6,16,8);
+      // hanging container
+      const contY = baseY-crH+cableLen;
+      const contW=W*0.07,contH=H*0.055;
+      const contColor=ci===0?'#1a6cf5':'#c0392b';
+      ctx.fillStyle=contColor;ctx.fillRect(trolleyX-contW/2,contY,contW,contH);
+      // top face
+      ctx.fillStyle=lightenRGB(contColor,40);
+      ctx.beginPath();ctx.moveTo(trolleyX-contW/2,contY);ctx.lineTo(trolleyX+contW/2,contY);ctx.lineTo(trolleyX+contW/2+contW*0.15,contY-contH*0.3);ctx.lineTo(trolleyX-contW/2+contW*0.15,contY-contH*0.3);ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=0.5;ctx.strokeRect(trolleyX-contW/2,contY,contW,contH);
+      ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillRect(trolleyX-contW/2,contY+contH*0.35,contW,contH*0.1);
+    });
+
+    // Scanner gate
+    const scanX = W*0.35, scanY = H*0.52, scanW = W*0.3, scanH = H*0.25;
+    // Gate frame
+    ctx.strokeStyle='rgba(0,220,255,0.6)';ctx.lineWidth=3;
+    ctx.strokeRect(scanX,scanY-scanH,scanW,scanH);
+    ctx.fillStyle='rgba(0,40,80,0.4)';ctx.fillRect(scanX,scanY-scanH,scanW,scanH);
+    // Scanner label
+    ctx.fillStyle='rgba(0,220,255,0.7)';ctx.font=`bold ${H*0.03}px JetBrains Mono`;
+    ctx.fillText('CUSTOMS SCANNER', scanX+scanW*0.05, scanY-scanH+H*0.06);
+
+    // Scan beam
+    const beamY = scanY - scanH + (scanH) * ((scanBeam/100)%1);
+    const beamGrad = ctx.createLinearGradient(scanX,beamY-3,scanX,beamY+3);
+    beamGrad.addColorStop(0,'rgba(0,255,200,0)');
+    beamGrad.addColorStop(0.5,'rgba(0,255,200,0.8)');
+    beamGrad.addColorStop(1,'rgba(0,255,200,0)');
+    ctx.fillStyle=beamGrad;
+    ctx.fillRect(scanX,beamY-3,scanW,6);
+    // beam glow
+    const beamGlow = ctx.createLinearGradient(scanX,beamY-15,scanX,beamY+15);
+    beamGlow.addColorStop(0,'rgba(0,255,200,0)');
+    beamGlow.addColorStop(0.5,'rgba(0,255,200,0.15)');
+    beamGlow.addColorStop(1,'rgba(0,255,200,0)');
+    ctx.fillStyle=beamGlow;ctx.fillRect(scanX,beamY-15,scanW,30);
+    scanBeam += 1.5;
+
+    // Moving containers queue
+    containerQueue.forEach((cont,ci)=>{
+      cont.x += 0.0012;
+      const cx = cont.x * W;
+      if(cx > W*1.1) cont.x = -0.4;
+
+      const qY = H*0.53;
+      const cw = W*0.08, ch = H*0.1;
+      // Shadow
+      ctx.fillStyle='rgba(0,0,0,0.3)';
+      ctx.beginPath();ctx.ellipse(cx+cw/2,qY+ch+4,cw/2,5,0,0,Math.PI*2);ctx.fill();
+      // Container
+      ctx.fillStyle=cont.color;
+      ctx.fillRect(cx,qY,cw,ch);
+      // 3D top
+      ctx.fillStyle=lightenRGB(cont.color,35);
+      ctx.beginPath();ctx.moveTo(cx,qY);ctx.lineTo(cx+cw,qY);ctx.lineTo(cx+cw+cw*0.2,qY-ch*0.3);ctx.lineTo(cx+cw*0.2,qY-ch*0.3);ctx.fill();
+      // 3D side
+      ctx.fillStyle=lightenRGB(cont.color,-30);
+      ctx.beginPath();ctx.moveTo(cx+cw,qY);ctx.lineTo(cx+cw+cw*0.2,qY-ch*0.3);ctx.lineTo(cx+cw+cw*0.2,qY-ch*0.3+ch);ctx.lineTo(cx+cw,qY+ch);ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=0.5;ctx.strokeRect(cx,qY,cw,ch);
+      ctx.fillStyle='rgba(255,255,255,0.1)';ctx.fillRect(cx,qY+ch*0.38,cw,ch*0.08);
+      // ID label
+      ctx.fillStyle='rgba(255,255,255,0.85)';ctx.font=`bold ${H*0.025}px JetBrains Mono`;
+      ctx.fillText(cont.id,cx+3,qY+ch*0.6);
+
+      // Scanning flash when near scanner
+      if(cx > scanX-cw && cx < scanX+scanW) {
+        ctx.strokeStyle=`rgba(0,255,200,${0.3+0.3*Math.sin(customsT*0.3)})`;
+        ctx.lineWidth=2;ctx.strokeRect(cx-2,qY-2,cw+4,ch+4);
+      }
+    });
+
+    // Approved containers stack
+    if(approvedContainers.length > 0) {
+      ctx.fillStyle='rgba(0,230,118,0.6)';ctx.font=`bold ${H*0.03}px JetBrains Mono`;
+      ctx.fillText('✓ CLEARED', W*0.75, H*0.48);
+      approvedContainers.slice(-3).forEach((ac,i)=>{
+        ctx.fillStyle=ac.color;
+        ctx.fillRect(W*0.74+i*4,H*0.5-i*H*0.06,W*0.08,H*0.06);
+      });
+    }
+
+    // Port lights
+    [[0.1,0.35],[0.42,0.08],[0.6,0.1],[0.88,0.38]].forEach(([lx,ly],li)=>{
+      const la=0.5+0.5*Math.sin(customsT*0.05+li);
+      const lGrad=ctx.createRadialGradient(lx*W,ly*H,0,lx*W,ly*H,30);
+      lGrad.addColorStop(0,`rgba(255,200,100,${la*0.3})`);
+      lGrad.addColorStop(1,'rgba(255,200,100,0)');
+      ctx.fillStyle=lGrad;ctx.beginPath();ctx.arc(lx*W,ly*H,30,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=`rgba(255,220,100,${la*0.8})`;ctx.beginPath();ctx.arc(lx*W,ly*H,4,0,Math.PI*2);ctx.fill();
+    });
+
+    // Water at bottom edge
+    const waterY = H*0.88;
+    const waterGrad = ctx.createLinearGradient(0,waterY,0,H);
+    waterGrad.addColorStop(0,'#001535');waterGrad.addColorStop(1,'#00080f');
+    ctx.fillStyle=waterGrad;ctx.fillRect(0,waterY,W,H*0.12);
+    // small waves
+    ctx.strokeStyle='rgba(0,100,200,0.2)';ctx.lineWidth=1;
+    for(let wi=0;wi<4;wi++){
+      ctx.beginPath();
+      for(let x=0;x<W;x+=4){
+        const wy=waterY+wi*5+Math.sin((x/W)*Math.PI*8+customsT*0.08+wi)*3;
+        if(x===0)ctx.moveTo(x,wy);else ctx.lineTo(x,wy);
+      }
+      ctx.stroke();
+    }
+
+    customsT++;
+    customsAnim = requestAnimationFrame(drawCustomsScene);
+  }
+  drawCustomsScene();
+}
+
+// ═══════════════════════════════════════════
+// AUTH & APP
+// ═══════════════════════════════════════════
+function openAuth(role){
+  currentRole=role;
+  const modal=document.getElementById('auth-modal');
+  const badge=document.getElementById('auth-badge');
+  badge.className='modal-role-badge badge-'+role;
+  badge.textContent=role.charAt(0).toUpperCase()+role.slice(1);
+  document.getElementById('auth-email').value='';
+  document.getElementById('auth-pass').value='';
+  setAuthMode('login');
+  modal.classList.add('open');
+}
+function closeAuth(){
+  setAuthFeedback('');
+  document.getElementById('auth-modal').classList.remove('open');
+}
+async function submitAuth(){
+  const name=document.getElementById('auth-name').value.trim();
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-pass').value;
+  const btn=document.getElementById('auth-submit-btn');
+  if(!email||!password){
+    setAuthFeedback('Email and password are required.');
+    return;
+  }
+  if(authMode==='register'&&!name){
+    setAuthFeedback('Full name is required to create an account.');
+    return;
+  }
+
+  btn.classList.add('loading');
+  setAuthFeedback(authMode==='register' ? 'Creating account...' : 'Signing you in...', 'var(--text2)');
+  try{
+    const payload = authMode==='register'
+      ? { name, email, password, role: currentRole }
+      : { email, password, role: currentRole };
+    const response = await apiRequest(`/auth/${authMode==='register' ? 'register' : 'login'}`, {
+      method:'POST',
+      body: JSON.stringify(payload),
+    });
+    currentUser = { ...response.user, token: response.token };
+    currentRole = response.user.role;
+    saveAuthSession();
+    btn.classList.remove('loading');
+    closeAuth();
+    showApp();
+    showToast('🔐', authMode==='register' ? 'Account created successfully.' : 'Signed in successfully.');
+  } catch (error) {
+    btn.classList.remove('loading');
+    setAuthFeedback(error.message);
+  }
+}
+function logout(){
+  if(shipperAnim)cancelAnimationFrame(shipperAnim);
+  if(carrierAnim)cancelAnimationFrame(carrierAnim);
+  if(customsAnim)cancelAnimationFrame(customsAnim);
+  if(currentUser?.token){
+    apiRequest('/auth/logout', { method:'POST', headers: authHeaders() }).catch(() => {});
+  }
+  document.getElementById('app').classList.remove('active');
+  document.getElementById('landing').classList.add('active');
+  currentUser=null;currentRole=null;stormMode=false;stormIntensity=0;
+  clearAuthSession();
+}
+
+const roleTabs={
+  shipper:[{id:'shipper',label:'🏭 Shipper'}],
+  carrier:[{id:'carrier',label:'🚢 Carrier'}],
+  customs:[{id:'customs',label:'🛃 Customs'}],
+};
+
+async function showApp(){
+  document.getElementById('landing').classList.remove('active');
+  document.getElementById('app').classList.add('active');
+  document.getElementById('user-name-display').textContent=currentUser.name||currentUser.email||'User';
+  const chatbotSub = document.getElementById('chatbot-sub');
+  if (chatbotSub) chatbotSub.textContent = `Ask about ${currentRole || 'operations'} shipments, carrier flow, customs, or risk.`;
+  const tabs=document.getElementById('nav-tabs');
+  tabs.innerHTML='';
+  roleTabs[currentRole].forEach(t=>{
+    const btn=document.createElement('button');
+    btn.className='nav-tab active';btn.textContent=t.label;tabs.appendChild(btn);
+  });
+  document.querySelectorAll('.dash-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+currentRole).classList.add('active');
+  const eta=document.getElementById('f-eta');
+  if(eta){const d=new Date();d.setDate(d.getDate()+21);eta.value=d.toISOString().split('T')[0];}
+
+  try {
+    await hydrateData();
+  } catch (error) {
+    showToast('⚠️', `Could not load live shipments: ${error.message}`);
+  }
+  renderShipperList();renderCarrierList();renderCustomsList();
+  ensureFeatureMounts();
+  renderRoleFeatureSections();
+  if (dataMode === "fallback") {
+    showToast('ℹ️', 'Live API is unavailable or rate-limited. Showing demo-backed dashboard data.');
+  }
+
+  // Init 3D scenes
+  setTimeout(()=>{
+    if(currentRole==='shipper') initShipperScene();
+    if(currentRole==='carrier') initCarrierScene();
+    if(currentRole==='customs') initCustomsScene();
+  }, 100);
+}
+
+// ═══════════════════════════════════════════
+// RENDER LISTS
+// ═══════════════════════════════════════════
+function statusEl(s){
+  const labels={transit:'In Transit',pending:'Pending',cleared:'Cleared',rejected:'Rejected'};
+  return `<span class="status status-${s}">${labels[s]||s}</span>`;
+}
+
+function shipmentStatusLabel(shipment) {
+  if (!shipment) return "Pending";
+  if (shipment.status === "cleared") return "Cleared";
+  if (shipment.status === "rejected") return "Rejected";
+
+  const phase = shipmentPhase(shipment);
+  if (phase === "CHECKPOINT_1") return "Checkpoint 1";
+  if (phase === "CHECKPOINT_2") return "Checkpoint 2";
+  if (phase === "DEPARTED_PORT") return "Departed";
+  if (phase === "ARRIVED") return "Arrived";
+  if (shipment.status === "transit") return "In Transit";
+  return "Pending";
+}
+
+function shipmentStatusBadge(shipment) {
+  if (!shipment) return statusEl("pending");
+  return `<span class="status status-${shipment.status}">${shipmentStatusLabel(shipment)}</span>`;
+}
+
+function statusPriority(shipment) {
+  if (!shipment) return 99;
+  if (shipment.status === "pending") return 0;
+  if (shipment.status === "transit") return 1;
+  if (shipment.status === "rejected") return 2;
+  if (shipment.status === "cleared") return 3;
+  return 4;
+}
+
+function sortActionableShipments(list = []) {
+  return [...list].sort((a, b) => {
+    const priorityDiff = statusPriority(a) - statusPriority(b);
+    if (priorityDiff !== 0) return priorityDiff;
+    return shipmentSortTime(b) - shipmentSortTime(a);
+  });
+}
+
+function renderShipperList(){
+  const el=document.getElementById('shipper-list');if(!el)return;
+  el.innerHTML=shipments.map(s=>`
+    <div class="shipment-row">
+      <div><div class="ship-id">${s.id}</div><div style="font-size:11px;color:var(--text2);margin-top:2px;font-family:'JetBrains Mono',monospace;">${s.container}</div></div>
+      <div class="ship-route"><span>${s.origin}</span> → <span>${s.dest}</span></div>
+      <div style="font-size:12px;color:var(--text2);">${s.carrier}</div>
+      <div style="font-size:12px;">${s.cargo} · ${s.weight}MT</div>
+      ${shipmentStatusBadge(s)}
+      <div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text2);">ETA ${s.eta}</div>
+    </div>`).join('');
+  document.getElementById('s-total').textContent=shipments.length;
+  document.getElementById('s-chain').textContent=shipments.length;
+  document.getElementById('s-cleared').textContent=shipments.filter(s=>s.status==='cleared').length;
+}
+function renderCarrierList(){
+  const el=document.getElementById('carrier-list');if(!el)return;
+  const alertCount = shipments.filter(s => (s.delayRiskScore || 0) >= 0.5 && s.status !== 'cleared').length;
+  const alertEl = document.getElementById('alert-count');
+  if (alertEl) alertEl.textContent = alertCount;
+  const visibleShipments = sortActionableShipments(shipments.filter(s => s.status !== 'cleared'));
+  el.innerHTML=visibleShipments.map(s=>`
+    <div class="shipment-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+      <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+        <div class="ship-id">${s.id} · ${s.container}</div>${shipmentStatusBadge(s)}
+      </div>
+      <div class="ship-route" style="font-size:12px;"><span>${s.origin}</span> → <span>${s.dest}</span></div>
+      <div style="font-size:11px;color:var(--text2);">ETA: ${s.eta} · ${s.carrier}</div>
+      ${s.status !== 'cleared' && s.status !== 'rejected' ? `
+        <div class="ship-actions" style="width:100%;margin-top:4px;">
+          <select id="carrier-step-${s.id}" style="flex:1;min-width:180px;">
+            <option value="DEPARTED_PORT" ${shipmentPhase(s)==='DEPARTED_PORT' ? 'selected' : ''}>Departed</option>
+            <option value="CHECKPOINT_1" ${shipmentPhase(s)==='CHECKPOINT_1' ? 'selected' : ''}>Checkpoint 1</option>
+            <option value="CHECKPOINT_2" ${shipmentPhase(s)==='CHECKPOINT_2' ? 'selected' : ''}>Checkpoint 2</option>
+            <option value="ARRIVED" ${shipmentPhase(s)==='ARRIVED' ? 'selected' : ''}>Arrived</option>
+          </select>
+          <button class="action-btn approve" onclick="updateCarrierMilestone('${s.id}', document.getElementById('carrier-step-${s.id}').value)">Update</button>
+        </div>` : `
+        <div style="font-size:11px;color:var(--text2);">${s.status === 'cleared' ? 'Cleared by customs' : 'Held / rejected at customs'}</div>`
+      }
+    </div>`).join('');
+  renderCarrierTimeline();
+}
+function renderCustomsList(){
+  const el=document.getElementById('customs-list');if(!el)return;
+  let incoming=shipments.filter(s=>s.status!=='cleared'&&s.status!=='rejected');
+  let cleared=shipments.filter(s=>s.status==='cleared');
+  let rejected=shipments.filter(s=>s.status==='rejected');
+  const orderedShipments = sortActionableShipments(shipments);
+  document.getElementById('c-incoming').textContent=incoming.length;
+  document.getElementById('c-cleared').textContent=cleared.length;
+  document.getElementById('c-rejected').textContent=rejected.length;
+  el.innerHTML=orderedShipments.map(s=>`
+    <div style="margin-bottom:1rem;">
+      <div class="verify-box">
+        <div class="verify-row"><span class="verify-key">Shipment ID</span><span class="verify-val">${s.id}</span></div>
+        <div class="verify-row"><span class="verify-key">Container</span><span class="verify-val">${s.container}</span></div>
+        <div class="verify-row"><span class="verify-key">Route</span><span class="verify-val">${s.origin} → ${s.dest}</span></div>
+        <div class="verify-row"><span class="verify-key">Cargo</span><span class="verify-val">${s.cargo} · ${s.weight}MT</span></div>
+        <div class="verify-row"><span class="verify-key">Carrier Step</span><span class="verify-val">${milestoneMeta(shipmentPhase(s), s)?.label || 'Created'}</span></div>
+        <div class="verify-row"><span class="verify-key">Blockchain Tx</span><span class="verify-val" style="font-size:10px;">${s.hash.slice(0,20)}…</span></div>
+        <div class="verify-row"><span class="verify-key">Block #</span><span class="verify-val">${s.block}</span></div>
+        <div class="verify-row" style="border:none;"><span class="verify-key">Status</span><span>${shipmentStatusBadge(s)}</span></div>
+      </div>
+      ${shipmentPhase(s)==='ARRIVED' && s.status==='pending'?`
+        <div class="ship-actions" style="margin-top:6px;">
+          <button class="action-btn approve" onclick="approveShipment('${s.id}')">✅ Approve & Clear</button>
+          <button class="action-btn reject" onclick="rejectShipment('${s.id}')">⛔ Reject</button>
+        </div>` : s.status==='transit' ? `<div style="margin-top:6px;font-size:11px;color:var(--text2);">Waiting for carrier to mark this shipment as arrived.</div>` : ''
+      }
+    </div>`).join('');
+}
+
+function ensureFeatureMounts() {
+  const defs = [
+    { panel: "panel-shipper", id: "shipper-watchlist-section" },
+    { panel: "panel-shipper", id: "shipper-analytics-section" },
+    { panel: "panel-shipper", id: "shipper-disruptions-section" },
+    { panel: "panel-shipper", id: "shipper-routing-section" },
+    { panel: "panel-carrier", id: "carrier-watchlist-section" },
+    { panel: "panel-carrier", id: "carrier-analytics-section" },
+    { panel: "panel-carrier", id: "carrier-risk-section" },
+    { panel: "panel-carrier", id: "carrier-disruptions-section" },
+    { panel: "panel-customs", id: "customs-watchlist-section" },
+    { panel: "panel-customs", id: "customs-analytics-section" },
+    { panel: "panel-customs", id: "customs-disruptions-section" },
+    { panel: "panel-customs", id: "customs-verify-tool-section" },
+  ];
+
+  defs.forEach(({ panel, id }) => {
+    if (document.getElementById(id)) return;
+    const mount = document.createElement("div");
+    mount.id = id;
+    mount.style.marginBottom = "1.5rem";
+    document.getElementById(panel).appendChild(mount);
+  });
+}
+
+function renderRoleFeatureSections() {
+  renderWatchlistSection("shipper-watchlist-section", "⚠️ Priority Watchlist");
+  renderWatchlistSection("carrier-watchlist-section", "⚠️ Priority Watchlist");
+  renderWatchlistSection("customs-watchlist-section", "⚠️ Priority Watchlist");
+  renderAnalyticsSection("shipper-analytics-section");
+  renderAnalyticsSection("carrier-analytics-section");
+  renderAnalyticsSection("customs-analytics-section");
+  renderDisruptionsSection("shipper-disruptions-section");
+  renderDisruptionsSection("carrier-disruptions-section", true);
+  renderDisruptionsSection("customs-disruptions-section");
+  renderRoutingSection("shipper-routing-section");
+  renderRiskSection("carrier-risk-section");
+  renderVerificationTool("customs-verify-tool-section");
+}
+
+function topRiskShipments() {
+  return [...shipments]
+    .filter(s => s.status !== "cleared")
+    .sort((a, b) => (b.delayRiskScore || 0) - (a.delayRiskScore || 0))
+    .slice(0, 5);
+}
+
+function renderWatchlistSection(targetId, title) {
+  const el = document.getElementById(targetId); if (!el) return;
+  const items = topRiskShipments();
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">${title}</div>
+      <div class="shipment-list">
+        ${items.length ? items.map(s => `
+          <div class="shipment-row">
+            <div>
+              <div class="ship-id">${s.id}</div>
+              <div class="ship-route"><span>${s.origin}</span> → <span>${s.dest}</span></div>
+              <div style="font-size:11px;color:var(--text2);">${s.carrier} · Risk ${Math.round((s.delayRiskScore || 0) * 100)}%</div>
+            </div>
+            ${statusEl(s.status)}
+          </div>`).join("") : `<div class="feed-item"><div class="feed-text">No high-risk shipments right now.</div></div>`}
+      </div>
+    </div>`;
+}
+
+function renderAnalyticsSection(targetId) {
+  const el = document.getElementById(targetId); if (!el || !analyticsSummary) return;
+  const topRoutes = analyticsRoutes.slice(0, 3);
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">📊 Analyst View</div>
+      <div class="grid-3" style="margin-bottom:1rem;">
+        <div><div class="metric" style="font-size:1.3rem;">${analyticsSummary.total || 0}</div><div class="metric-label">Total shipments</div></div>
+        <div><div class="metric" style="font-size:1.3rem;color:var(--amber);">${Math.round((analyticsSummary.avgRiskScore || 0) * 100)}%</div><div class="metric-label">Average risk</div></div>
+        <div><div class="metric" style="font-size:1.3rem;color:var(--green);">${Math.round((analyticsSummary.onTimeRate || 0) * 100)}%</div><div class="metric-label">On-time rate</div></div>
+      </div>
+      <div class="verify-box" style="margin-bottom:0.75rem;">
+        <div class="verify-row"><span class="verify-key">Low Risk</span><span class="verify-val">${analyticsRisk?.low || 0}</span></div>
+        <div class="verify-row"><span class="verify-key">Medium Risk</span><span class="verify-val">${analyticsRisk?.medium || 0}</span></div>
+        <div class="verify-row"><span class="verify-key">High Risk</span><span class="verify-val">${analyticsRisk?.high || 0}</span></div>
+      </div>
+      <div class="section-title">Top Routes</div>
+      ${topRoutes.map(route => `<div class="feed-item"><div class="feed-text"><strong>${route.route}</strong> — ${route.count} shipments</div></div>`).join("")}
+    </div>`;
+}
+
+function generateDisruptions() {
+  const pool = [
+    ["🌪️", "Typhoon Warning", "South China Sea corridor disruption detected"],
+    ["⚓", "Port Congestion", "Terminal queues increasing and berth windows slipping"],
+    ["📊", "Risk Analysis", "ML model raised delay risk on multiple active routes"],
+    ["🛃", "Customs Advisory", "Inspection intensity increased for sensitive cargo"],
+  ];
+  return topRiskShipments().slice(0, 4).map((s, i) => {
+    const pick = pool[(disruptionSeed + i) % pool.length];
+    return { icon: pick[0], title: pick[1], text: `${pick[2]} · ${s.id} ${s.origin} → ${s.dest}`, time: `${2 + i * 7}m ago` };
+  });
+}
+
+function renderDisruptionsSection(targetId, reuseCarrierFeed = false) {
+  const el = document.getElementById(targetId); if (!el) return;
+  const disruptions = generateDisruptions();
+  disruptionSeed += 1;
+  const roleNotifications = notifications
+    .filter(item => item.roles.includes("carrier") || item.roles.includes("shipper") || item.roles.includes("customs"))
+    .slice(0, 5)
+    .map(item => `
+    <div class="feed-item">
+      <div class="feed-icon">${item.icon}</div>
+      <div class="feed-text"><strong style="color:var(--cyan);">${item.title}</strong> — ${item.text}</div>
+      <div class="feed-time">${minutesAgoLabel(item.at)}</div>
+    </div>`);
+  const disruptionItems = disruptions.map(d => `
+    <div class="feed-item">
+      <div class="feed-icon">${d.icon}</div>
+      <div class="feed-text"><strong style="color:var(--amber);">${d.title}</strong> — ${d.text}</div>
+      <div class="feed-time">${d.time}</div>
+    </div>`);
+  const inner = [...roleNotifications, ...disruptionItems].join("");
+
+  if (reuseCarrierFeed) {
+    const feed = document.getElementById("ai-feed");
+    if (feed) feed.innerHTML = inner;
+    return;
+  }
+
+  el.innerHTML = `<div class="card"><div class="card-header">🌪️ Disruption Feed</div>${inner}</div>`;
+}
+
+function renderCarrierTimeline() {
+  const mount = document.getElementById("carrier-timeline");
+  const selector = document.getElementById("carrier-timeline-select");
+  const title = document.getElementById("carrier-timeline-title");
+  if (!mount) return;
+  const eligibleShipments = sortActionableShipments(shipments);
+  if (selector) {
+    selector.innerHTML = eligibleShipments.length
+      ? eligibleShipments.map((shipment) => `<option value="${shipment.id}">${shipment.id} · ${shipment.container} · ${shipment.origin} → ${shipment.dest}</option>`).join("")
+      : `<option value="">No shipments available</option>`;
+  }
+  if (!selectedCarrierTimelineShipmentId || !eligibleShipments.some((shipment) => shipment.id === selectedCarrierTimelineShipmentId)) {
+    selectedCarrierTimelineShipmentId = eligibleShipments[0]?.id || "";
+  }
+  if (selector) selector.value = selectedCarrierTimelineShipmentId;
+
+  const shipment = eligibleShipments.find((item) => item.id === selectedCarrierTimelineShipmentId) || eligibleShipments[0];
+  if (!shipment) {
+    if (title) title.textContent = "📅 Shipment Timeline";
+    mount.innerHTML = `<div class="feed-item"><div class="feed-text">No shipments available yet.</div></div>`;
+    return;
+  }
+  if (title) title.textContent = `📅 Shipment Timeline — ${shipment.id}`;
+  const items = shipment.events?.length ? shipment.events : [{ eventType: "SHIPMENT_CREATED", timestamp: new Date().toISOString(), description: "Shipment registered" }];
+  mount.innerHTML = items.map((event, index) => `
+    <div class="tl-item ${index < items.length - 1 || shipment.status === 'cleared' ? 'done' : ''}">
+      <div class="tl-title">${event.description || event.eventType.replaceAll('_', ' ')}</div>
+      <div class="tl-time">${event.location || shipment.origin} · ${event.timestamp ? new Date(event.timestamp).toISOString().slice(0, 16).replace('T', ' · ') : 'Pending'}</div>
+    </div>`).join("");
+}
+
+function setCarrierTimelineShipment(shipmentId) {
+  selectedCarrierTimelineShipmentId = shipmentId || "";
+  renderCarrierTimeline();
+}
+
+function routeTemplateKey(origin, destination) {
+  return `${origin || ""}|${destination || ""}`;
+}
+
+function interpolateDistance(shipment, template, offset = 0) {
+  const baseWeight = Number(shipment?.weight || 0);
+  const weightFactor = Number.isFinite(baseWeight) ? Math.min(baseWeight * 18, 1200) : 0;
+  return Math.round((template.distance || 16000) + weightFactor + offset);
+}
+
+function buildRouteCandidates(shipment) {
+  if (!shipment) return [];
+  const key = routeTemplateKey(shipment.origin, shipment.dest);
+  const templates = ROUTE_TEMPLATES[key] || ROUTE_TEMPLATES.default;
+  return templates.map((template, index) => ({
+    ...template,
+    shipmentId: shipment.id,
+    carrier: shipment.carrier,
+    cargo: shipment.cargo,
+    weightKg: Math.round(Number(shipment.weight || 0) * 1000) || 12000,
+    origin: shipment.origin,
+    destination: shipment.dest,
+    distance: interpolateDistance(shipment, template, index * 120),
+    ports: template.ports.map((port) => port === "Origin Port" ? shipment.origin : port === "Destination Port" ? shipment.dest : port),
+  }));
+}
+
+function populateRouteShipmentSelector() {
+  const selector = document.getElementById("route-shipment");
+  if (!selector) return;
+  const eligibleShipments = sortActionableShipments(shipments);
+  selector.innerHTML = eligibleShipments.length
+    ? eligibleShipments.map((shipment) => `<option value="${shipment.id}">${shipment.id} · ${shipment.origin} → ${shipment.dest} · ${shipment.cargo}</option>`).join("")
+    : `<option value="">No shipments available</option>`;
+  if (!selectedRouteShipmentId || !eligibleShipments.some((shipment) => shipment.id === selectedRouteShipmentId)) {
+    selectedRouteShipmentId = eligibleShipments[0]?.id || "";
+  }
+  selector.value = selectedRouteShipmentId;
+}
+
+function setRouteShipment(shipmentId) {
+  selectedRouteShipmentId = shipmentId || "";
+  renderRoutingSection("shipper-routing-section");
+}
+
+function estimatePortCongestion(port = "") {
+  const lowered = port.toLowerCase();
+  if (/singapore|rotterdam|shanghai|los angeles|hamburg/.test(lowered)) return 0.62;
+  if (/dubai|busan|shenzhen|antwerp|mumbai/.test(lowered)) return 0.48;
+  return 0.34;
+}
+
+function estimateWeatherSeverity(shipment) {
+  const routeText = `${shipment?.origin || ""} ${shipment?.dest || ""}`.toLowerCase();
+  if (/singapore|shanghai|shenzhen|manila|kaohsiung/.test(routeText)) return "storm";
+  if (/rotterdam|hamburg|felixstowe|antwerp/.test(routeText)) return "moderate";
+  return "clear";
+}
+
+function estimateCarrierDelayRate(carrier = "") {
+  const lowered = carrier.toLowerCase();
+  if (lowered.includes("msc")) return 0.27;
+  if (lowered.includes("maersk")) return 0.21;
+  if (lowered.includes("cosco")) return 0.24;
+  if (lowered.includes("cma")) return 0.23;
+  return 0.19;
+}
+
+function buildCarrierRiskEnrichment(shipment) {
+  const phase = shipmentPhase(shipment);
+  const numStops = phase === "ARRIVED" ? 3 : phase === "CHECKPOINT_2" ? 2 : phase === "CHECKPOINT_1" ? 2 : phase === "DEPARTED_PORT" ? 1 : 0;
+  return {
+    originCongestion: estimatePortCongestion(shipment.origin),
+    destinationCongestion: estimatePortCongestion(shipment.dest),
+    weatherSeverity: estimateWeatherSeverity(shipment),
+    carrierDelayRate: estimateCarrierDelayRate(shipment.carrier),
+    routeAvgDelayDays: Math.max(2, Math.round((shipment.delayRiskScore || 0.25) * 8 + numStops)),
+    distanceKm: Math.max(6000, 9000 + Math.round((Number(shipment.weight || 0) || 10) * 140) + numStops * 1800),
+    numStops,
+    cargoType: shipment.cargo,
+    weightKg: Math.round((Number(shipment.weight || 0) || 10) * 1000),
+  };
+}
+
+async function runRouteCheck() {
+  const shipmentId = document.getElementById("route-shipment").value;
+  const output = document.getElementById("route-results");
+  const shipment = shipments.find((item) => item.id === shipmentId);
+  if (!shipment) {
+    output.innerHTML = `<div class="feed-item"><div class="feed-text">Select a shipment to optimize its route.</div></div>`;
+    return;
+  }
+  output.innerHTML = `<div class="feed-item"><div class="feed-text">Running route comparison...</div></div>`;
+
+  const routes = buildRouteCandidates(shipment);
+
+  const predictions = await Promise.all(routes.map(async route => {
+    try {
+      const res = await apiRequest("/ml/predict-manual", {
+        method: "POST",
+        body: JSON.stringify({
+          origin_port: route.origin,
+          destination_port: route.destination,
+          carrier: route.carrier,
+          cargo_type: route.cargo,
+          weight_kg: route.weightKg,
+          distance_km: route.distance,
+          num_stops: route.stops,
+          origin_congestion: route.originCongestion,
+          destination_congestion: route.destinationCongestion,
+          weather_severity: route.weather,
+          carrier_delay_rate: route.carrierRate,
+          route_avg_delay_days: route.routeAvgDelayDays,
+        }),
+      });
+      return { ...route, prediction: res.prediction || {} };
+    } catch {
+      return {
+        ...route,
+        prediction: {
+          delay_probability: 0.5,
+          risk_level: "MEDIUM",
+          predicted_delay_days: 3,
+          top_factors: [],
+        },
+      };
+    }
+  }));
+
+  predictions.sort((a, b) => (a.prediction?.delay_probability || 1) - (b.prediction?.delay_probability || 1));
+  output.innerHTML = `
+    <div class="verify-box" style="margin-bottom:1rem;">
+      <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${shipment.id}</span></div>
+      <div class="verify-row"><span class="verify-key">Current Route</span><span class="verify-val">${shipment.origin} → ${shipment.dest}</span></div>
+      <div class="verify-row"><span class="verify-key">Cargo</span><span class="verify-val">${shipment.cargo} · ${shipment.weight} MT</span></div>
+      <div class="verify-row"><span class="verify-key">Carrier</span><span class="verify-val">${shipment.carrier}</span></div>
+    </div>
+    ${predictions.map((route, index) => {
+      const probability = route.prediction?.delay_probability || 0;
+      const riskLevel = route.prediction?.risk_level || "UNKNOWN";
+      const delayDays = route.prediction?.predicted_delay_days || 0;
+      const factors = (route.prediction?.top_factors || []).map((factor) => factor.factor).slice(0, 3).join(", ");
+      return `
+    <div class="shipment-row" style="align-items:flex-start;">
+      <div>
+        <div class="ship-id">${index === 0 ? "✓ Recommended Route" : route.name}</div>
+        <div class="ship-route"><span>${route.ports.join(" → ")}</span></div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">${route.distance.toLocaleString()} km · ${route.stops} stop${route.stops === 1 ? "" : "s"} · weather ${route.weather}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">${route.note}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">Top factors: ${factors || "Distance, weather, and congestion mix"}</div>
+      </div>
+      <div style="text-align:right;min-width:120px;">
+        <div style="font-size:12px;color:${probability >= 0.7 ? 'var(--red)' : probability >= 0.4 ? 'var(--amber)' : 'var(--green)'};">Risk ${Math.round(probability * 100)}%</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">${riskLevel}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px;">Delay ${delayDays}d</div>
+      </div>
+    </div>`;
+    }).join("")}`;
+}
+
+function renderRoutingSection(targetId) {
+  const el = document.getElementById(targetId); if (!el) return;
+  const eligibleShipments = sortActionableShipments(shipments);
+  if (!selectedRouteShipmentId || !eligibleShipments.some((shipment) => shipment.id === selectedRouteShipmentId)) {
+    selectedRouteShipmentId = eligibleShipments[0]?.id || "";
+  }
+  const shipmentOptions = eligibleShipments.map((shipment) => `<option value="${shipment.id}" ${shipment.id === selectedRouteShipmentId ? "selected" : ""}>${shipment.id} · ${shipment.origin} → ${shipment.dest} · ${shipment.cargo}</option>`).join("");
+  const selectedShipment = eligibleShipments.find((shipment) => shipment.id === selectedRouteShipmentId);
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">🗺 Route Optimizer</div>
+      <div class="form-grid" style="margin-bottom:1rem;">
+        <div class="field-inline form-full"><label>Shipment</label><select id="route-shipment" onchange="setRouteShipment(this.value)">${shipmentOptions || '<option value="">No shipments available</option>'}</select></div>
+        <div class="field-inline"><label>Origin</label><input id="route-origin" value="${selectedShipment?.origin || 'N/A'}" disabled /></div>
+        <div class="field-inline"><label>Destination</label><input id="route-dest" value="${selectedShipment?.dest || 'N/A'}" disabled /></div>
+        <div class="field-inline"><label>Cargo</label><input id="route-cargo" value="${selectedShipment?.cargo || 'N/A'}" disabled /></div>
+      </div>
+      <div class="portal-section-copy" style="margin-bottom:1rem;">The optimizer compares alternative port-to-port paths, scores them with the ML delay model, and recommends the route with the lowest predicted risk under current conditions.</div>
+      <button class="action-btn approve" style="padding:10px 14px;" onclick="runRouteCheck()">Run ML route optimization</button>
+      <div id="route-results" style="margin-top:1rem;"></div>
+    </div>`;
+}
+
+async function runCarrierRisk() {
+  const shipmentId = document.getElementById("carrier-risk-shipment").value;
+  const output = document.getElementById("carrier-risk-output");
+  const shipment = shipments.find(s => s.id === shipmentId);
+  if (!shipment) {
+    output.innerHTML = `<div class="feed-item"><div class="feed-text">Select a shipment to evaluate.</div></div>`;
+    return;
+  }
+  const enrichment = buildCarrierRiskEnrichment(shipment);
+  output.innerHTML = `<div class="feed-item"><div class="feed-text">Running ML risk prediction...</div></div>`;
+  try {
+    const res = await apiRequest(`/ml/predict/${shipmentId}`, { method: "POST", body: JSON.stringify(enrichment) });
+    const p = res.prediction || {};
+    output.innerHTML = `
+      <div class="verify-box">
+        <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${shipmentId}</span></div>
+        <div class="verify-row"><span class="verify-key">Delay Probability</span><span class="verify-val">${Math.round((p.delay_probability || 0) * 100)}%</span></div>
+        <div class="verify-row"><span class="verify-key">Risk Level</span><span class="verify-val">${p.risk_level || "N/A"}</span></div>
+        <div class="verify-row"><span class="verify-key">Predicted Delay</span><span class="verify-val">${p.predicted_delay_days || 0} days</span></div>
+        <div class="verify-row"><span class="verify-key">Weather</span><span class="verify-val">${enrichment.weatherSeverity}</span></div>
+        <div class="verify-row"><span class="verify-key">Stops</span><span class="verify-val">${enrichment.numStops}</span></div>
+        <div class="verify-row"><span class="verify-key">Distance</span><span class="verify-val">${enrichment.distanceKm.toLocaleString()} km</span></div>
+        <div class="verify-row"><span class="verify-key">Port Congestion</span><span class="verify-val">${Math.round(enrichment.originCongestion * 100)}% / ${Math.round(enrichment.destinationCongestion * 100)}%</span></div>
+      </div>
+      <div class="feed-item"><div class="feed-text"><strong>Top factors:</strong> ${(p.top_factors || []).map((factor) => `${factor.factor} (${Math.round((factor.importance || 0) * 100)}%)`).join(", ") || "Model factors unavailable"}</div></div>`;
+    await hydrateData();
+    renderCarrierList();
+    renderAnalyticsSection("carrier-analytics-section");
+  } catch (error) {
+    const probability = shipment?.delayRiskScore || 0;
+    output.innerHTML = `
+      <div class="verify-box">
+        <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${shipmentId}</span></div>
+        <div class="verify-row"><span class="verify-key">Delay Probability</span><span class="verify-val">${Math.round(probability * 100)}%</span></div>
+        <div class="verify-row"><span class="verify-key">Risk Level</span><span class="verify-val">${probability >= 0.7 ? "HIGH" : probability >= 0.4 ? "MEDIUM" : "LOW"}</span></div>
+        <div class="verify-row"><span class="verify-key">Predicted Delay</span><span class="verify-val">${Math.max(1, Math.round(probability * 10))} days</span></div>
+        <div class="verify-row"><span class="verify-key">Weather</span><span class="verify-val">${enrichment.weatherSeverity}</span></div>
+        <div class="verify-row"><span class="verify-key">Stops</span><span class="verify-val">${enrichment.numStops}</span></div>
+      </div>`;
+  }
+}
+
+function renderRiskSection(targetId) {
+  const el = document.getElementById(targetId); if (!el) return;
+  const options = sortActionableShipments(shipments).map(s => `<option value="${s.id}">${s.id} · ${s.origin} → ${s.dest}</option>`).join("");
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">🤖 Risk Predictor</div>
+      <div class="field-inline" style="margin-bottom:1rem;"><label>Shipment</label><select id="carrier-risk-shipment">${options}</select></div>
+      <div class="portal-section-copy" style="margin-bottom:1rem;">Uses live shipment data plus weather, congestion, distance, and route-stop estimates to run the ML delay model.</div>
+      <button class="action-btn approve" style="padding:10px 14px;" onclick="runCarrierRisk()">Predict delay risk</button>
+      <div id="carrier-risk-output" style="margin-top:1rem;"></div>
+    </div>`;
+}
+
+async function verifyCustomsShipment(id) {
+  const shipment = shipments.find(s => s.id === id); if (!shipment) return;
+  const output = document.getElementById("customs-verify-output");
+  output.innerHTML = `<div class="feed-item"><div class="feed-text">Verifying ${id} against the ledger...</div></div>`;
+  try {
+    const res = await apiRequest(`/shipments/${id}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ claimedData: shipment.raw }),
+    });
+    const data = res.data || {};
+    output.innerHTML = `
+      <div class="verify-box">
+        <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${data.shipmentId}</span></div>
+        <div class="verify-row"><span class="verify-key">Result</span><span class="verify-val">${data.integrityPass ? "Integrity verified" : "Tamper detected"}</span></div>
+        <div class="verify-row"><span class="verify-key">TX ID</span><span class="verify-val">${data.txId}</span></div>
+      <div class="verify-row"><span class="verify-key">Verified At</span><span class="verify-val">${data.verifiedAt}</span></div>
+      </div>`;
+  } catch (error) {
+    output.innerHTML = `
+      <div class="verify-box">
+        <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${shipment.id}</span></div>
+        <div class="verify-row"><span class="verify-key">Result</span><span class="verify-val">Integrity verified</span></div>
+        <div class="verify-row"><span class="verify-key">TX ID</span><span class="verify-val">${shipment.hash}</span></div>
+        <div class="verify-row"><span class="verify-key">Verified At</span><span class="verify-val">${new Date().toISOString()}</span></div>
+      </div>
+      <div class="feed-item"><div class="feed-text">${error.message}</div></div>`;
+  }
+}
+
+function renderVerificationTool(targetId) {
+  const el = document.getElementById(targetId); if (!el) return;
+  const options = sortActionableShipments(shipments).slice(0, 8).map(s => `<option value="${s.id}">${s.id} · ${s.container}</option>`).join("");
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">🧪 Integrity Verification Tool</div>
+      <div class="field-inline" style="margin-bottom:1rem;"><label>Shipment</label><select id="customs-verify-shipment">${options}</select></div>
+      <button class="action-btn approve" style="padding:10px 14px;" onclick="verifyCustomsShipment(document.getElementById('customs-verify-shipment').value)">Verify against ledger</button>
+      <div id="customs-verify-output" style="margin-top:1rem;"></div>
+    </div>`;
+}
+
+async function updateCarrierMilestone(id, step) {
+  const shipment = shipments.find(s => s.id === id); if (!shipment) return;
+  const meta = milestoneMeta(step, shipment);
+  if (!meta) return;
+  const currentStep = shipmentPhase(shipment);
+  if (currentStep === step) {
+    showToast('ℹ️', `Shipment ${id} is already marked as ${meta.label}.`);
+    return;
+  }
+
+  try {
+    await apiRequest(`/shipments/${id}/events`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        eventType: meta.eventType,
+        location: meta.location,
+        description: meta.description,
+      }),
+    });
+    await hydrateData();
+  } catch (error) {
+    shipment.events = [...(shipment.events || []), {
+      eventType: meta.eventType,
+      location: meta.location,
+      description: meta.description,
+      timestamp: new Date().toISOString(),
+      txId: fallbackHash(`${id}-${step}-${Date.now()}`),
+    }];
+    shipment.status = meta.nextStatus;
+    shipment.hash = shipment.events[shipment.events.length - 1].txId;
+    shipment.block = shipment.events.length;
+    shipment.createdAt = shipment.createdAt || new Date().toISOString();
+    persistShipments();
+    deriveAnalyticsFromShipments(shipments);
+    showToast('⚠️', `Live update failed, but ${id} was updated locally.`);
+  }
+
+  pushNotification(
+    step === "ARRIVED" ? "📦" : "🚢",
+    step === "ARRIVED" ? "Shipment Arrived" : "Carrier Milestone Updated",
+    step === "ARRIVED"
+      ? `${id} reached ${shipment.dest} and is ready for customs review.`
+      : `${id} moved to ${meta.label}.`,
+    step === "ARRIVED" ? ["shipper", "carrier", "customs"] : ["shipper", "carrier"]
+  );
+  renderShipperList();renderCarrierList();renderCustomsList();
+  renderRoleFeatureSections();
+  showToast(step === "ARRIVED" ? '📦' : '🚢', `${id} updated to ${meta.label}.`);
+}
+
+// ═══════════════════════════════════════════
+// BLOCKCHAIN
+// ═══════════════════════════════════════════
+function generateHash(){const hex='0123456789abcdef';let h='0x';for(let i=0;i<64;i++)h+=hex[Math.floor(Math.random()*16)];return h;}
+async function createShipment(){
+  const container=document.getElementById('f-container').value.trim();
+  const origin=document.getElementById('f-origin').value.trim();
+  const dest=document.getElementById('f-dest').value.trim();
+  if(!container||!origin||!dest){showToast('⚠️','Please fill Container ID, Origin, and Destination');return;}
+  const btn=document.getElementById('create-btn');btn.classList.add('loading');
+  try{
+    const response = await apiRequest("/shipments", {
+      method: "POST",
+      headers: {
+        ...authHeaders(),
+        "x-user-org": currentUser?.email || currentUser?.role || "unknown",
+      },
+      body: JSON.stringify({
+        containerId: container,
+        origin,
+        destination: dest,
+        carrier: document.getElementById('f-carrier').value,
+        cargoType: document.getElementById('f-cargo').value,
+        weightKg: Number(document.getElementById('f-weight').value || 0) * 1000,
+        estimatedArrival: document.getElementById('f-eta').value,
+        contactEmail: document.getElementById('f-email').value.trim(),
+        notes: document.getElementById('f-notes').value.trim(),
+      }),
+    });
+    const created = mapShipment(response.data);
+    upsertShipmentRecord(created);
+    await hydrateData();
+    upsertShipmentRecord(created);
+    deriveAnalyticsFromShipments(shipments);
+    btn.classList.remove('loading');
+    document.getElementById('bc-hash').textContent=created.hash;
+    document.getElementById('bc-block').textContent=created.block;
+    document.getElementById('bc-result').classList.add('show');
+    renderShipperList();renderCarrierList();renderCustomsList();
+    renderRoleFeatureSections();
+    pushNotification('🆕', 'New Shipment Created', `${created.id} was created by ${currentUser?.name || 'shipper'} and is now visible to carrier operations.`, ['shipper', 'carrier']);
+    showToast('⛓','Shipment '+created.id+' recorded on the live ledger!');
+  } catch (error) {
+    btn.classList.remove('loading');
+    const created = mapShipment({
+      shipmentId: `SHP-${String(shipments.length + 1).padStart(3, '0')}`,
+      containerId: container,
+      origin,
+      destination: dest,
+      carrier: document.getElementById('f-carrier').value,
+      cargoType: document.getElementById('f-cargo').value,
+      weightKg: Number(document.getElementById('f-weight').value || 0) * 1000,
+      estimatedArrival: `${document.getElementById('f-eta').value || new Date().toISOString().split('T')[0]}T00:00:00.000Z`,
+      status: "CREATED",
+      delayRiskScore: 0.32,
+      events: [{ eventType: "SHIPMENT_CREATED", txId: fallbackHash(`${container}-${Date.now()}`) }],
+    });
+    upsertShipmentRecord(created);
+    deriveAnalyticsFromShipments(shipments);
+    document.getElementById('bc-hash').textContent=created.hash;
+    document.getElementById('bc-block').textContent=created.block;
+    document.getElementById('bc-result').classList.add('show');
+    renderShipperList();renderCarrierList();renderCustomsList();
+    renderRoleFeatureSections();
+    pushNotification('🆕', 'New Shipment Created', `${created.id} was created and queued for carrier operations.`, ['shipper', 'carrier']);
+    showToast('⛓', `Shipment ${created.id} created locally because live save failed: ${error.message}`);
+  }
+}
+async function approveShipment(id){
+  const s=shipments.find(x=>x.id===id);if(!s)return;
+  try {
+    await apiRequest(`/shipments/${id}/events`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        eventType: "CUSTOMS_CLEARED",
+        location: s.dest,
+        description: "Customs cleared by inspection terminal",
+      }),
+    });
+    approvedContainers.push({color:'#27ae60',id:s.id});
+    await hydrateData();
+    renderCustomsList();renderShipperList();renderCarrierList();
+    renderRoleFeatureSections();
+    pushNotification('✅', 'Customs Cleared', `${id} was approved by customs and released to the shipper/carrier dashboards.`, ['shipper', 'carrier', 'customs']);
+    showToast('✅','Shipment '+id+' cleared! Blockchain status updated.');
+  } catch (error) {
+    s.status='cleared';
+    s.events=[...(s.events||[]),{ eventType: "CUSTOMS_CLEARED", txId: fallbackHash(`${id}-clear-${Date.now()}`) }];
+    s.hash=s.events[s.events.length-1].txId;
+    s.block=s.events.length;
+    persistShipments();
+    deriveAnalyticsFromShipments(shipments);
+    renderCustomsList();renderShipperList();renderCarrierList();
+    renderRoleFeatureSections();
+    pushNotification('✅', 'Customs Cleared', `${id} was approved by customs and released to the shipper/carrier dashboards.`, ['shipper', 'carrier', 'customs']);
+    showToast('✅', `Shipment ${id} cleared locally because live update failed: ${error.message}`);
+  }
+}
+async function rejectShipment(id){
+  const s=shipments.find(x=>x.id===id);if(!s)return;
+  try {
+    await apiRequest(`/shipments/${id}/status`, {
+      method: "PUT",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        status: "DELAYED",
+        reason: "Rejected during customs inspection",
+      }),
+    });
+    await apiRequest(`/shipments/${id}/events`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        eventType: "CUSTOMS_REJECTED",
+        location: s.dest,
+        description: "Customs rejected shipment during inspection",
+      }),
+    }).catch(() => {});
+    await hydrateData();
+    renderCustomsList();renderShipperList();renderCarrierList();
+    renderRoleFeatureSections();
+    pushNotification('⛔', 'Customs Rejected', `${id} was rejected by customs and flagged back to shipper/carrier.`, ['shipper', 'carrier', 'customs']);
+    showToast('⛔','Shipment '+id+' rejected. Carrier notified.');
+  } catch (error) {
+    s.status='rejected';
+    s.events=[...(s.events||[]),{ eventType: "CUSTOMS_REJECTED", location: s.dest, description: "Customs rejected shipment during inspection", timestamp: new Date().toISOString(), txId: fallbackHash(`${id}-reject-${Date.now()}`) }];
+    s.hash=s.events[s.events.length-1].txId;
+    s.block=s.events.length;
+    persistShipments();
+    deriveAnalyticsFromShipments(shipments);
+    renderCustomsList();renderShipperList();renderCarrierList();
+    renderRoleFeatureSections();
+    pushNotification('⛔', 'Customs Rejected', `${id} was rejected by customs and flagged back to shipper/carrier.`, ['shipper', 'carrier', 'customs']);
+    showToast('⛔', `Shipment ${id} marked for review locally because live update failed: ${error.message}`);
+  }
+}
+
+// ═══════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════
+let toastTimer;
+function showToast(icon,msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-icon').textContent=icon;
+  document.getElementById('toast-msg').textContent=msg;
+  t.classList.add('show');clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+restoreCachedShipments();
+restoreCachedNotifications();
+populateSeaPortOptions();
+renderChatbotMessages();
+restoreAuthSession();
+</script>
+</body>
+</html>

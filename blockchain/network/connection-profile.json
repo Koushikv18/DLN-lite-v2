@@ -1,0 +1,96 @@
+{
+  "name": "dln-lite-network",
+  "version": "1.0.0",
+  "client": {
+    "organization": "Org1",
+    "connection": {
+      "timeout": {
+        "peer":    { "endorser": "300" },
+        "orderer": "300"
+      }
+    }
+  },
+  "organizations": {
+    "Org1": {
+      "mspid": "Org1MSP",
+      "peers": ["peer0.org1.dln.com"],
+      "certificateAuthorities": ["ca.org1.dln.com"],
+      "adminPrivateKey": {
+        "path": "crypto-config/peerOrganizations/org1.dln.com/users/Admin@org1.dln.com/msp/keystore/priv_sk"
+      },
+      "signedCert": {
+        "path": "crypto-config/peerOrganizations/org1.dln.com/users/Admin@org1.dln.com/msp/signcerts/Admin@org1.dln.com-cert.pem"
+      }
+    },
+    "Org2": {
+      "mspid": "Org2MSP",
+      "peers": ["peer0.org2.dln.com"],
+      "certificateAuthorities": ["ca.org2.dln.com"]
+    }
+  },
+  "peers": {
+    "peer0.org1.dln.com": {
+      "url": "grpcs://localhost:7051",
+      "tlsCACerts": {
+        "path": "crypto-config/peerOrganizations/org1.dln.com/peers/peer0.org1.dln.com/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.org1.dln.com",
+        "hostnameOverride":         "peer0.org1.dln.com"
+      }
+    },
+    "peer0.org2.dln.com": {
+      "url": "grpcs://localhost:9051",
+      "tlsCACerts": {
+        "path": "crypto-config/peerOrganizations/org2.dln.com/peers/peer0.org2.dln.com/tls/ca.crt"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.org2.dln.com",
+        "hostnameOverride":         "peer0.org2.dln.com"
+      }
+    }
+  },
+  "orderers": {
+    "orderer.dln.com": {
+      "url": "grpcs://localhost:7050",
+      "tlsCACerts": {
+        "path": "crypto-config/ordererOrganizations/dln.com/orderers/orderer.dln.com/msp/tlscacerts/tlsca.dln.com-cert.pem"
+      },
+      "grpcOptions": {
+        "ssl-target-name-override": "orderer.dln.com",
+        "hostnameOverride":         "orderer.dln.com"
+      }
+    }
+  },
+  "certificateAuthorities": {
+    "ca.org1.dln.com": {
+      "url": "http://localhost:7054",
+      "caName": "ca-org1",
+      "httpOptions": { "verify": false }
+    },
+    "ca.org2.dln.com": {
+      "url": "http://localhost:8054",
+      "caName": "ca-org2",
+      "httpOptions": { "verify": false }
+    }
+  },
+  "channels": {
+    "dlnchannel": {
+      "orderers": ["orderer.dln.com"],
+      "peers": {
+        "peer0.org1.dln.com": {
+          "endorsingPeer":  true,
+          "chaincodeQuery": true,
+          "ledgerQuery":    true,
+          "eventSource":    true
+        },
+        "peer0.org2.dln.com": {
+          "endorsingPeer":  true,
+          "chaincodeQuery": true,
+          "ledgerQuery":    true,
+          "eventSource":    false
+        }
+      }
+    }
+  }
+}
