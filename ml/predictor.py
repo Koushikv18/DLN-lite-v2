@@ -32,6 +32,24 @@ FEATURE_COLUMNS = [
 ]
 
 
+# Human-readable labels for explanations
+FACTOR_LABELS = {
+    "origin_congestion":        "Origin port congestion",
+    "destination_congestion":   "Destination port congestion",
+    "weather_severity_encoded": "Weather conditions",
+    "carrier_delay_rate":       "Carrier historical delay rate",
+    "route_avg_delay_days":     "Route average delay history",
+    "distance_km":              "Route distance",
+    "num_stops":                "Number of transit stops",
+    "month":                    "Season / time of year",
+    "weight_kg":                "Cargo weight",
+    "cargo_type_encoded":       "Cargo type",
+    "origin_port_encoded":      "Origin port",
+    "destination_port_encoded": "Destination port",
+    "carrier_encoded":          "Carrier",
+}
+
+
 class DelayPredictor:
     """
     Wraps the trained XGBoost model.
@@ -129,43 +147,73 @@ class DelayPredictor:
     # _get_top_factors
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _get_top_factors(self, X: pd.DataFrame) -> list:
+    def _contributions(self, X: pd.DataFrame):
         """
-        Returns the top 3 features driving this prediction,
-        using the model's feature importances.
+        Per-prediction feature contributions (TreeSHAP, built into XGBoost).
+        Returns ({feature: contribution_in_log_odds}, bias_in_log_odds).
+        Positive contribution = pushes this shipment towards "delayed".
         """
-        importances = self.model.feature_importances_
-        feature_names = FEATURE_COLUMNS
+        import xgboost as xgb
 
-        # Pair each feature with its importance score
-        pairs = sorted(
-            zip(feature_names, importances),
-            key=lambda x: x[1],
-            reverse=True
-        )
+        booster = self.model.get_booster()
+        dmat = xgb.DMatrix(X, feature_names=list(X.columns))
+        contribs = booster.predict(dmat, pred_contribs=True)[0]
+        return dict(zip(FEATURE_COLUMNS, map(float, contribs[:-1]))), float(contribs[-1])
 
-        # Human-readable labels
-        label_map = {
-            "origin_congestion":        "Origin port congestion",
-            "destination_congestion":   "Destination port congestion",
-            "weather_severity_encoded": "Weather conditions",
-            "carrier_delay_rate":       "Carrier historical delay rate",
-            "route_avg_delay_days":     "Route average delay history",
-            "distance_km":              "Route distance",
-            "num_stops":                "Number of transit stops",
-            "month":                    "Season / time of year",
-            "weight_kg":                "Cargo weight",
-            "cargo_type_encoded":       "Cargo type",
-            "origin_port_encoded":      "Origin port",
-            "destination_port_encoded": "Destination port",
-            "carrier_encoded":          "Carrier",
+    def explain_single(self, features: dict) -> dict:
+        """Full per-shipment explanation: probability, bias and every contribution."""
+        if self.model is None:
+            raise RuntimeError("Model not loaded. Run train_model.py first.")
+
+        encoded = encode_features(features, self.encoders)
+        X = pd.DataFrame([encoded], columns=FEATURE_COLUMNS)
+        prob = float(self.model.predict_proba(X)[0][1])
+        contribs, bias = self._contributions(X)
+
+        ranked = sorted(contribs.items(), key=lambda kv: abs(kv[1]), reverse=True)
+        return {
+            "delay_probability": round(prob, 4),
+            "base_log_odds":     round(bias, 4),
+            "contributions": [
+                {
+                    "feature":      name,
+                    "factor":       FACTOR_LABELS.get(name, name),
+                    "contribution": round(value, 4),
+                    "direction":    "increases risk" if value > 0 else "decreases risk",
+                }
+                for name, value in ranked
+            ],
         }
 
-        top = []
-        for feature, importance in pairs[:3]:
-            top.append({
-                "factor":     label_map.get(feature, feature),
-                "importance": round(float(importance), 4),
-            })
-
-        return top
+    def _get_top_factors(self, X: pd.DataFrame) -> list:
+        """
+        Returns the top 3 features driving THIS prediction (per-shipment TreeSHAP
+        contributions). Falls back to global feature importances if contributions
+        cannot be computed. `importance` keeps the 0-1 scale the dashboard expects
+        (it renders importance x 100 as a percentage): it is this feature's share
+        of the total absolute contribution for this shipment. `contribution` is
+        the signed log-odds value.
+        """
+        try:
+            contribs, _ = self._contributions(X)
+            total = sum(abs(v) for v in contribs.values()) or 1.0
+            ranked = sorted(contribs.items(), key=lambda kv: abs(kv[1]), reverse=True)[:3]
+            return [
+                {
+                    "factor":       FACTOR_LABELS.get(name, name),
+                    "importance":   round(abs(value) / total, 4),  # share of total influence, 0-1
+                    "contribution": round(value, 4),
+                    "direction":    "increases risk" if value > 0 else "decreases risk",
+                }
+                for name, value in ranked
+            ]
+        except Exception:
+            pairs = sorted(
+                zip(FEATURE_COLUMNS, self.model.feature_importances_),
+                key=lambda x: x[1],
+                reverse=True,
+            )[:3]
+            return [
+                {"factor": FACTOR_LABELS.get(f, f), "importance": round(float(i), 4)}
+                for f, i in pairs
+            ]

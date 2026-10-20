@@ -138,4 +138,21 @@ cd blockchain/blockchain/network
 ```
 
 ---
+
+## 📚 Documentation
+
+- [Architecture, trust model and known limitations](docs/ARCHITECTURE.md)
+- [ML evaluation (cross-validation, oracle ceiling, calibration, robustness)](docs/ML_EVALUATION.md) — reproduce with `python ml/evaluate_model.py`
+- [CI workflow](docs/ci-workflow.yml) — move to `.github/workflows/ci.yml` to enable GitHub Actions
+- ML service endpoints: `POST /predict`, `POST /batch-predict`, `POST /explain` (per-shipment reasons), `GET /model-info`, `GET /health`
+
+## ✅ Running the tests
+
+```bash
+pip install -r ml/requirements-dev.txt && python -m pytest          # ML service
+cd backend && npm ci && cd ..                                       # API tests (Fabric mocked)
+NODE_PATH=backend/node_modules backend/node_modules/.bin/jest --config jest.config.json --rootDir . --forceExit
+```
+
+---
 *Developed for research and demonstration purposes.*

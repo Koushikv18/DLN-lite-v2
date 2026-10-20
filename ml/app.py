@@ -79,6 +79,20 @@ async def batch_predict(request: BatchPredictionRequest):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /explain — per-shipment explanation (why this risk score?)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post("/explain")
+async def explain(data: ShipmentFeatures):
+    try:
+        return predictor.explain_single(data.model_dump())
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /health
 # ─────────────────────────────────────────────────────────────────────────────
 

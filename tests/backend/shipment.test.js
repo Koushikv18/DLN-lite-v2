@@ -61,11 +61,15 @@ jest.mock("../../backend/services/mlService", () => ({
 // ── Mock MongoDB ───────────────────────────────────────────────────────────
 jest.mock("../../backend/models/ShipmentMeta", () => ({
   create: jest.fn().mockResolvedValue({ shipmentId: "SHP-TEST01", notes: "" }),
-  find:   jest.fn().mockResolvedValue([]),
-  findOne: jest.fn().mockResolvedValue(null),
+  // Mongoose queries are chainable (.find(...).lean()), so the mock must be too.
+  find:   jest.fn(() => ({ lean: jest.fn().mockResolvedValue([]) })),
+  findOne: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })),
 }));
 
-jest.mock("../../backend/utils/db", () => jest.fn());
+jest.mock("../../backend/utils/db", () => ({
+  connectDB: jest.fn(),
+  getDatabaseMode: jest.fn(() => "mongodb"),
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests

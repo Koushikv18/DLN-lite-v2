@@ -1,0 +1,35 @@
+# Move this file to .github/workflows/ci.yml to enable CI (pushing workflow files needs a token with the "workflow" scope).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ml:
+    name: ML service tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ml/requirements-dev.txt
+      - run: pip install -r ml/requirements-dev.txt
+      - run: python -m pytest
+
+  backend:
+    name: Backend API tests (Fabric mocked)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - name: Run jest from repo root (tests live in /tests, deps in /backend)
+        run: NODE_PATH=backend/node_modules backend/node_modules/.bin/jest --config jest.config.json --rootDir . --forceExit
