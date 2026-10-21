@@ -2,10 +2,13 @@ const express = require("express");
 const router = express.Router();
 const fabricService = require("../services/fabricService");
 const logger = require("../utils/logger");
+const { authenticate } = require("../middleware/auth");
+
+router.use(authenticate);
 
 router.get("/summary", async (req, res) => {
   try {
-    const shipments = await fabricService.getAllShipments() || [];
+    const shipments = await fabricService.getAllShipments(req.user.email) || [];
     const total = shipments.length;
     const inTransit = shipments.filter(s => s.status === "IN_TRANSIT").length;
     const delivered = shipments.filter(s => s.status === "DELIVERED").length;
@@ -27,7 +30,7 @@ router.get("/summary", async (req, res) => {
 
 router.get("/risk-distribution", async (req, res) => {
   try {
-    const shipments = await fabricService.getAllShipments() || [];
+    const shipments = await fabricService.getAllShipments(req.user.email) || [];
     const active = shipments.filter(s => s.status !== "DELIVERED");
     res.json({
       success: true, data: {
@@ -41,7 +44,7 @@ router.get("/risk-distribution", async (req, res) => {
 
 router.get("/top-routes", async (req, res) => {
   try {
-    const shipments = await fabricService.getAllShipments() || [];
+    const shipments = await fabricService.getAllShipments(req.user.email) || [];
     const counts = {};
     shipments.forEach(s => { const k = `${s.origin} → ${s.destination}`; counts[k] = (counts[k] || 0) + 1; });
     const topRoutes = Object.entries(counts).map(([route, count]) => ({ route, count })).sort((a, b) => b.count - a.count).slice(0, 10);

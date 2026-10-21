@@ -13,7 +13,7 @@ DLN-Lite is a comprehensive full-stack Web3 application designed to demonstrate 
 - **Backend (Node.js/Express)**:
   - RESTful APIs to interact with the blockchain and ML services.
   - Generates and encrypts unique Fabric X.509 user identities using AES-256-GCM natively in MongoDB.
-  - Manages JWT sessions and user roles (shipper, carrier, customs).
+  - Manages bearer-token sessions and user roles (shipper, carrier, customs).
 - **ML Service (FastAPI / Python)**:
   - Consumes predictive metrics (cargo weight, distance, weather).
   - Provides risk scoring for shipment delays.
@@ -149,6 +149,7 @@ cd blockchain/blockchain/network
 ## ✅ Running the tests
 
 ```bash
+(cd blockchain/chaincode/shipment && GOFLAGS=-mod=vendor go test ./...)      # chaincode access control
 pip install -r ml/requirements-dev.txt && python -m pytest          # ML service
 cd backend && npm ci && cd ..                                       # API tests (Fabric mocked)
 NODE_PATH=backend/node_modules backend/node_modules/.bin/jest --config jest.config.json --rootDir . --forceExit

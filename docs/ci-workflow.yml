@@ -33,3 +33,15 @@ jobs:
         working-directory: backend
       - name: Run jest from repo root (tests live in /tests, deps in /backend)
         run: NODE_PATH=backend/node_modules backend/node_modules/.bin/jest --config jest.config.json --rootDir . --forceExit
+
+  chaincode:
+    name: Chaincode unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Run chaincode tests (vendored dependencies, no network needed)
+        working-directory: blockchain/chaincode/shipment
+        run: GOFLAGS=-mod=vendor go test ./...

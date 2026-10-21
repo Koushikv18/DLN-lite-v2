@@ -13,6 +13,7 @@ const fabricService = require("../services/fabricService");
 const mlService = require("../services/mlService");
 const ShipmentMeta = require("../models/ShipmentMeta");
 const logger = require("../utils/logger");
+const { authenticate, requireRole } = require("../middleware/auth");
 
 // Middleware to handle validation errors
 const validate = (req, res, next) => {
@@ -23,13 +24,17 @@ const validate = (req, res, next) => {
   next();
 };
 
+// Every shipment endpoint needs a signed-in user: blockchain calls are made
+// with that user's own Fabric identity (req.user.email is the wallet label).
+router.use(authenticate);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/shipments
 // Returns all shipments (from blockchain) with ML risk scores
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
   try {
-    const shipments = await fabricService.getAllShipments();
+    const shipments = await fabricService.getAllShipments(req.user.email);
 
     // Attach MongoDB metadata (notes, documents, etc.) to each shipment
     const metas = await ShipmentMeta.find({
@@ -57,7 +62,7 @@ router.get("/", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/:id", param("id").notEmpty(), validate, async (req, res) => {
   try {
-    const shipment = await fabricService.getShipment(req.params.id);
+    const shipment = await fabricService.getShipment(req.user.email, req.params.id);
     const meta = await ShipmentMeta.findOne({ shipmentId: req.params.id }).lean();
 
     res.json({ success: true, data: { ...shipment, meta: meta || {} } });
@@ -73,6 +78,7 @@ router.get("/:id", param("id").notEmpty(), validate, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post(
   "/",
+  requireRole("shipper"),
   [
     body("containerId").notEmpty().withMessage("Container ID is required"),
     body("origin").notEmpty().withMessage("Origin is required"),
@@ -89,7 +95,7 @@ router.post(
       const shipmentData = { shipmentId, ...req.body };
 
       // Write critical record to blockchain
-      const blockchainRecord = await fabricService.createShipment(shipmentData);
+      const blockchainRecord = await fabricService.createShipment(req.user.email, shipmentData);
 
       // Write metadata to MongoDB (bulk / non-critical data)
       const meta = await ShipmentMeta.create({
@@ -97,13 +103,15 @@ router.post(
         notes: req.body.notes || "",
         documents: req.body.documents || [],
         contactEmail: req.body.contactEmail || "",
-        createdBy: req.headers["x-user-org"] || "unknown",
+        createdBy: req.user.email,
       });
 
       // Kick off initial ML prediction asynchronously
-      mlService.predictDelay(blockchainRecord).then(async (prediction) => {
-        await fabricService.updateDelayRisk(shipmentId, prediction.delay_probability);
-      });
+      const actingUser = req.user.email;
+      mlService
+        .predictDelay(blockchainRecord)
+        .then((prediction) => fabricService.updateDelayRisk(actingUser, shipmentId, prediction.delay_probability))
+        .catch((err) => logger.warn(`Initial risk scoring failed for ${shipmentId}: ${err.message}`));
 
       res.status(201).json({
         success: true,
@@ -133,7 +141,7 @@ router.post(
   async (req, res) => {
     try {
       const { eventType, location, description } = req.body;
-      const updated = await fabricService.recordEvent(req.params.id, eventType, location, description);
+      const updated = await fabricService.recordEvent(req.user.email, req.params.id, eventType, location, description);
 
       res.json({
         success: true,
@@ -153,6 +161,7 @@ router.post(
 // ─────────────────────────────────────────────────────────────────────────────
 router.post(
   "/:id/transfer",
+  requireRole("carrier"),
   [
     param("id").notEmpty(),
     body("newHolder").notEmpty().withMessage("New holder org is required"),
@@ -162,7 +171,7 @@ router.post(
   async (req, res) => {
     try {
       const { newHolder, location } = req.body;
-      const updated = await fabricService.transferCustody(req.params.id, newHolder, location);
+      const updated = await fabricService.transferCustody(req.user.email, req.params.id, newHolder, location);
 
       res.json({
         success: true,
@@ -179,9 +188,9 @@ router.post(
 // POST /api/shipments/:id/deliver
 // Mark a shipment as delivered
 // ─────────────────────────────────────────────────────────────────────────────
-router.post("/:id/deliver", param("id").notEmpty(), validate, async (req, res) => {
+router.post("/:id/deliver", requireRole("carrier", "customs"), param("id").notEmpty(), validate, async (req, res) => {
   try {
-    const updated = await fabricService.markDelivered(req.params.id);
+    const updated = await fabricService.markDelivered(req.user.email, req.params.id);
     res.json({ success: true, message: "Shipment marked as delivered", data: updated });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -194,7 +203,7 @@ router.post("/:id/deliver", param("id").notEmpty(), validate, async (req, res) =
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/:id/history", param("id").notEmpty(), validate, async (req, res) => {
   try {
-    const history = await fabricService.getShipmentHistory(req.params.id);
+    const history = await fabricService.getShipmentHistory(req.user.email, req.params.id);
     res.json({ success: true, count: history.length, data: history });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -209,6 +218,7 @@ module.exports = router;
 // ─────────────────────────────────────────────────────────────────────────────
 router.put(
   "/:id/status",
+  requireRole("carrier", "customs"),
   [
     param("id").notEmpty(),
     body("status").isIn(["CREATED","IN_TRANSIT","AT_PORT","IN_CUSTOMS","DELIVERED","DELAYED"])
@@ -219,7 +229,7 @@ router.put(
   async (req, res) => {
     try {
       const { status, reason } = req.body;
-      const updated = await fabricService.updateStatus(req.params.id, status, reason);
+      const updated = await fabricService.updateStatus(req.user.email, req.params.id, status, reason);
       res.json({ success: true, message: `Status updated to ${status}`, data: updated });
     } catch (error) {
       logger.error(`PUT /shipments/${req.params.id}/status error: ${error.message}`);
@@ -238,7 +248,7 @@ router.post(
   validate,
   async (req, res) => {
     try {
-      const result = await fabricService.verifyIntegrity(req.params.id, JSON.stringify(req.body.claimedData));
+      const result = await fabricService.verifyIntegrity(req.user.email, req.params.id, JSON.stringify(req.body.claimedData));
       res.json({ success: true, data: result });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

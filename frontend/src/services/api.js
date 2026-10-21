@@ -19,6 +19,36 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// ── Session handling ───────────────────────────────────────────────────────
+// The portal at "/" signs users in and stores the session under this key.
+// Every request carries that token, so the backend can sign blockchain
+// transactions with the signed-in user's own Fabric identity.
+const SESSION_KEY = "dln-lite-auth-session";
+
+api.interceptors.request.use((config) => {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(SESSION_KEY) || "null");
+    if (saved?.token) {
+      config.headers.Authorization = `Bearer ${saved.token}`;
+    }
+  } catch {
+    // Ignore corrupted local session state.
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // 401 = missing/expired session: send the user back to the portal to sign in.
+    if (error?.response?.status === 401 && window.location.pathname !== "/") {
+      window.localStorage.removeItem(SESSION_KEY);
+      window.location.assign("/");
+    }
+    return Promise.reject(error);
+  }
+);
+
 // ── Shipments ──────────────────────────────────────────────────────────────
 
 export const getAllShipments = () =>

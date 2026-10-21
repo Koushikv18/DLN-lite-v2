@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
@@ -61,6 +63,46 @@ type ShipmentEvent struct {
 	Timestamp   string `json:"timestamp"`
 	Description string `json:"description"`
 	TxID        string `json:"txId"`        // blockchain transaction ID for audit
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers: access control and deterministic time
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Roles issued by the Fabric CA (certificate attribute "role").
+const (
+	roleShipper = "shipper"
+	roleCarrier = "carrier"
+	roleCustoms = "customs"
+)
+
+// requireRole makes sure the caller's certificate carries one of the allowed
+// roles. A caller with no "role" attribute at all is always rejected.
+func requireRole(ctx contractapi.TransactionContextInterface, action string, allowed ...string) error {
+	role, found, err := ctx.GetClientIdentity().GetAttributeValue("role")
+	if err != nil {
+		return fmt.Errorf("failed to read caller role: %v", err)
+	}
+	if !found {
+		return fmt.Errorf("access denied: caller has no 'role' attribute and cannot %s", action)
+	}
+	for _, r := range allowed {
+		if role == r {
+			return nil
+		}
+	}
+	return fmt.Errorf("access denied: role '%s' cannot %s (allowed: %s)", role, action, strings.Join(allowed, ", "))
+}
+
+// txTimestamp returns the transaction's own timestamp. Unlike time.Now() it is
+// identical on every endorsing peer, so all endorsements produce the same
+// read/write set and the transaction can be committed.
+func txTimestamp(ctx contractapi.TransactionContextInterface) (string, error) {
+	ts, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return "", fmt.Errorf("failed to read transaction timestamp: %v", err)
+	}
+	return time.Unix(ts.Seconds, int64(ts.Nanos)).UTC().Format(time.RFC3339), nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,7 +225,10 @@ func (s *SmartContract) CreateShipment(
 		return nil, fmt.Errorf("failed to get client identity: %v", err)
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now, err := txTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	shipment := Shipment{
 		ShipmentID:       shipmentID,
@@ -240,6 +285,16 @@ func (s *SmartContract) RecordEvent(
 	description string,
 ) (*Shipment, error) {
 
+	if err := requireRole(ctx, "record events", roleShipper, roleCarrier, roleCustoms); err != nil {
+		return nil, err
+	}
+	// Only carriers and customs can attest that cargo was delivered.
+	if eventType == "DELIVERED" {
+		if err := requireRole(ctx, "record a DELIVERED event", roleCarrier, roleCustoms); err != nil {
+			return nil, err
+		}
+	}
+
 	shipment, err := s.getShipment(ctx, shipmentID)
 	if err != nil {
 		return nil, err
@@ -250,12 +305,17 @@ func (s *SmartContract) RecordEvent(
 		return nil, fmt.Errorf("failed to get client identity: %v", err)
 	}
 
+	eventTime, err := txTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	newEvent := ShipmentEvent{
 		EventID:     fmt.Sprintf("EVT-%s-%d", shipmentID, len(shipment.Events)+1),
 		EventType:   eventType,
 		Location:    location,
 		Actor:       clientOrg,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Timestamp:   eventTime,
 		Description: description,
 		TxID:        ctx.GetStub().GetTxID(),
 	}
@@ -279,15 +339,22 @@ func (s *SmartContract) TransferCustody(
 	location string,
 ) (*Shipment, error) {
 
+	// RBAC Check: Only a carrier can transfer custody
+	if err := requireRole(ctx, "transfer custody", roleCarrier); err != nil {
+		return nil, fmt.Errorf("access denied: only users with the 'carrier' role can transfer custody")
+	}
+
+	newHolder = strings.TrimSpace(newHolder)
+	if newHolder == "" || len(newHolder) > 64 {
+		return nil, fmt.Errorf("invalid new holder: must be 1-64 characters")
+	}
+
 	shipment, err := s.getShipment(ctx, shipmentID)
 	if err != nil {
 		return nil, err
 	}
-
-	// RBAC Check: Only a carrier can transfer custody
-	err = ctx.GetClientIdentity().AssertAttributeValue("role", "carrier")
-	if err != nil {
-		return nil, fmt.Errorf("access denied: only users with the 'carrier' role can transfer custody")
+	if newHolder == shipment.CurrentHolder {
+		return nil, fmt.Errorf("invalid new holder: %s already holds this shipment", newHolder)
 	}
 
 	clientOrg, err := ctx.GetClientIdentity().GetMSPID()
@@ -301,6 +368,11 @@ func (s *SmartContract) TransferCustody(
 			shipment.CurrentHolder, clientOrg)
 	}
 
+	transferTime, err := txTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	previousHolder := shipment.CurrentHolder
 	shipment.CurrentHolder = newHolder
 
@@ -309,7 +381,7 @@ func (s *SmartContract) TransferCustody(
 		EventType:   "CUSTODY_TRANSFERRED",
 		Location:    location,
 		Actor:       clientOrg,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Timestamp:   transferTime,
 		Description: fmt.Sprintf("Custody transferred from %s to %s at %s", previousHolder, newHolder, location),
 		TxID:        ctx.GetStub().GetTxID(),
 	}
@@ -327,6 +399,13 @@ func (s *SmartContract) UpdateDelayRisk(
 	shipmentID string,
 	riskScore float64,
 ) (*Shipment, error) {
+
+	if err := requireRole(ctx, "update delay risk", roleShipper, roleCarrier, roleCustoms); err != nil {
+		return nil, err
+	}
+	if math.IsNaN(riskScore) || riskScore < 0 || riskScore > 1 {
+		return nil, fmt.Errorf("invalid risk score %v: must be between 0 and 1", riskScore)
+	}
 
 	shipment, err := s.getShipment(ctx, shipmentID)
 	if err != nil {
@@ -352,13 +431,21 @@ func (s *SmartContract) MarkDelivered(
 	shipmentID string,
 ) (*Shipment, error) {
 
+	if err := requireRole(ctx, "mark a shipment delivered", roleCarrier, roleCustoms); err != nil {
+		return nil, err
+	}
+
 	shipment, err := s.getShipment(ctx, shipmentID)
 	if err != nil {
 		return nil, err
 	}
 
+	deliveredAt, err := txTimestamp(ctx)
+	if err != nil {
+		return nil, err
+	}
 	shipment.Status = StatusDelivered
-	shipment.ActualArrival = time.Now().UTC().Format(time.RFC3339)
+	shipment.ActualArrival = deliveredAt
 
 	clientOrg, _ := ctx.GetClientIdentity().GetMSPID()
 
@@ -512,7 +599,14 @@ func (s *SmartContract) UpdateStatus(
 	newStatus string,
 	reason string,
 ) (*Shipment, error) {
+	if err := requireRole(ctx, "update shipment status", roleCarrier, roleCustoms); err != nil {
+		return nil, err
+	}
 	shipment, err := s.getShipment(ctx, shipmentID)
+	if err != nil {
+		return nil, err
+	}
+	statusTime, err := txTimestamp(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -533,7 +627,7 @@ func (s *SmartContract) UpdateStatus(
 		EventType:   "STATUS_UPDATED",
 		Location:    "N/A",
 		Actor:       clientOrg,
-		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		Timestamp:   statusTime,
 		Description: fmt.Sprintf("Status changed %s → %s. Reason: %s", oldStatus, newStatus, reason),
 		TxID:        ctx.GetStub().GetTxID(),
 	})

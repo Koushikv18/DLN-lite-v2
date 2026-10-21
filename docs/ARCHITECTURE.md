@@ -22,35 +22,58 @@ flowchart LR
 | MongoDB | Login accounts, AES-256-GCM-encrypted Fabric private keys, notes/documents | Private or bulky data that shouldn't be replicated to every peer |
 | ML service | Trained model | Stateless scoring; replaceable without touching the ledger |
 
-## How a custody transfer is meant to be authorised
+## How a request is authorised, end to end
 
-1. A user registers; the backend enrolls them with their organisation's Fabric CA. The certificate carries a `role` attribute (`shipper`, `carrier`, ...). Passwords are hashed with PBKDF2 (SHA-512, 120k iterations); session tokens are random and stored only as SHA-256 hashes.
-2. The backend stores the Fabric private key encrypted (AES-256-GCM) in MongoDB. `fabricService` is built to open a Gateway connection *as that user*.
-3. The chaincode (`TransferCustody`) checks, inside the transaction:
-   - the caller's certificate has `role = carrier`, **and**
-   - the caller's organisation (MSP) is the shipment's current holder.
-4. The event is appended with the actor's MSP ID, the Fabric transaction ID and a timestamp, and the whole history is queryable via `GetShipmentHistory`.
+1. A user registers or signs in on the portal. Passwords are hashed with PBKDF2 (SHA-512, 120k iterations); the session token is random, expires after 7 days, and only its SHA-256 hash is stored.
+2. On registration the backend enrolls the user with the Fabric CA. The certificate carries a `role` attribute (`shipper`, `carrier` or `customs`), and the private key is stored encrypted (AES-256-GCM).
+3. Every `/api/shipments`, `/api/ml`, `/api/analytics` and `/api/chat` request must carry the token (`authenticate` middleware, 401 otherwise). The portal attaches it to every call.
+4. The API checks the role first (403 otherwise): only a shipper creates shipments, only a carrier transfers custody, only a carrier or customs delivers or sets status.
+5. The route then calls `fabricService` **with that user's email**, which opens a Fabric Gateway connection signed with that user's certificate.
+6. The chaincode enforces the same rules independently, using the certificate's `role` attribute. Even a client that bypasses the API cannot get around it. Events record the actor's MSP ID, the Fabric transaction ID and the transaction timestamp.
+
+| Chaincode function | Allowed roles |
+|---|---|
+| `CreateShipment` | shipper |
+| `TransferCustody` | carrier, and the caller's org must be the current holder; new holder must be 1–64 characters and different from the current holder |
+| `RecordEvent` | shipper, carrier, customs (a `DELIVERED` event: carrier or customs only) |
+| `UpdateDelayRisk` | shipper, carrier, customs; score must be between 0 and 1 |
+| `MarkDelivered`, `UpdateStatus` | carrier, customs |
+| Queries (`GetShipment`, `GetAllShipments`, `GetShipmentHistory`, `VerifyIntegrity`) | any enrolled identity |
 
 `VerifyIntegrity` compares a claimed record byte-for-byte with the on-chain state, which is what makes the "someone edited the database copy" demo possible.
 
-## Known limitations and hardening backlog
+## Threat model
 
-Listed deliberately: knowing them and having a plan is stronger than hoping nobody asks. Items 1–3 were found by reading the code, **not by running the full stack**, so confirm them against your running network.
+| Threat | Mitigation | Residual risk |
+|---|---|---|
+| A party edits its own copy of a record afterwards | State and history are on the ledger; `VerifyIntegrity` exposes mismatches | Only as strong as the endorsement policy and the number of independent orgs |
+| A shipper forges delivery or status | Role checks in both the API and the chaincode; `DELIVERED` events restricted | Role attribute is only as trustworthy as the CA's issuance process |
+| An unauthenticated caller reads or writes shipments | `authenticate` middleware on all data routes | Tokens are bearer tokens: anyone holding one acts as that user |
+| A client claims a role or user it doesn't have | Role and identity come from the server-side session, never from request headers or bodies | — |
+| Backend database leaked | Fabric private keys are encrypted at rest (AES-256-GCM); the server refuses to start in production without `ENCRYPTION_KEY` | Key management is a single environment variable |
+| Endorsing peers disagree on a transaction | Chaincode uses the transaction timestamp instead of wall-clock time | — |
 
-1. **The REST routes do not pass a user identity to `fabricService`.** Every `fabricService` method takes `userId` as its first argument (e.g. `createShipment(userId, data)`), but `shipmentRoutes.js` calls them without it (e.g. `createShipment(shipmentData)`), no middleware turns the bearer token into `req.user`, and the frontend does not send an `Authorization` header. The backend tests pass because they mock `fabricService`. The fix is a small `requireAuth` middleware plus passing `req.user.email` through, with tests asserting the identity reaches `fabricService`.
-2. **Only two chaincode write functions enforce roles.** `CreateShipment` (shipper) and `TransferCustody` (carrier + current holder) do. `RecordEvent`, `UpdateDelayRisk` and `MarkDelivered` accept any enrolled identity, so any user could mark any shipment delivered or overwrite its risk score. Next step: require the current holder (or a customs role) for `MarkDelivered`, and a dedicated `oracle` role for `UpdateDelayRisk`.
-3. **Encryption key falls back to a hard-coded default.** `caService.js` uses `ENCRYPTION_KEY` from the environment but, if unset, derives a key from the string `default-dev-key`. Anyone who reads the repo could decrypt stored identities on a deployment that forgot to set it. It should refuse to start without a key outside development.
-4. **`TransferCustody` accepts any string as `newHolder`.** It should be validated against the set of known organisations.
-5. **Chaincode uses `time.Now()`.** Fabric chaincode should use `ctx.GetStub().GetTxTimestamp()`; with several endorsing peers, wall-clock time can differ between endorsers and cause endorsement mismatches.
+## Known limitations and remaining work
+
+Listed deliberately: knowing them and having a plan is stronger than hoping nobody asks.
+
+1. **All users enroll into `Org1MSP`.** The `role` attribute separates shipper, carrier and customs, but the "current holder" check compares organisations, so it cannot tell two carriers apart. A realistic deployment enrolls each organisation into its own MSP.
+2. **Custody holder is free text** (1–64 characters), not a checked organisation ID.
+3. **The portal falls back to local demo data when the API call fails** ("created locally because live save failed"). That keeps demos running, but it also hides real failures. Before a demo, confirm the portal is in live mode.
+4. **Fabric CA admin credentials are the CA defaults** (`admin` / `adminpw`) in `caService.js`. Fine for a local demo; change them for anything shared.
+5. **One active session per user, 7-day lifetime, no refresh.** A new sign-in invalidates the previous token. Tokens are opaque random strings, not JWTs.
 6. **`VerifyIntegrity` compares raw JSON strings**, which is sensitive to key order. Comparing a SHA-256 of a canonical form would be sturdier.
 7. **The ML model is trained on synthetic data** (see `docs/ML_EVALUATION.md`). Real validation needs real port/carrier data.
 8. **The network is a single-machine demo** (2 orgs + orderer in Docker). It demonstrates the trust model, not geographic distribution or throughput at scale.
-9. **README says "JWT sessions", but the code uses opaque random bearer tokens.** Both are valid designs; the documentation should match the code.
+9. **The full stack was not run end to end in the review environment.** The chaincode, API and ML service are unit-tested (see below); integration against a live Fabric network should be re-checked on your machine.
 
 ## Where each claim is backed by evidence
 
 | Claim | Evidence |
 |---|---|
-| Role-restricted custody | `blockchain/chaincode/shipment/shipment.go` (`CreateShipment`, `TransferCustody`). Go tests exist in `tests/blockchain/` but are outside the chaincode package and not run in CI |
-| API behaviour (Fabric mocked) | `tests/backend/shipment.test.js`, run in CI |
-| ML pipeline and per-shipment explanations | `tests/ml/`, run in CI; `docs/ML_EVALUATION.md` reproduced with `python ml/evaluate_model.py` |
+| Chaincode roles, validation and deterministic timestamps | `blockchain/chaincode/shipment/shipment_test.go`: `cd blockchain/chaincode/shipment && GOFLAGS=-mod=vendor go test ./...` |
+| API authentication, role gates and identity propagation | `tests/backend/shipment.test.js` (Fabric mocked) |
+| Encryption-key handling | `tests/backend/encryptionKey.test.js` |
+| ML pipeline and per-shipment explanations | `tests/ml/`; `docs/ML_EVALUATION.md` (reproduce with `python ml/evaluate_model.py`) |
+
+The older `tests/blockchain/shipment_test.go` needs `shimtest` and `testify`, which are not vendored, and lives outside the chaincode module, so it is not part of the runnable suite.

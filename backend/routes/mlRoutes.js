@@ -10,6 +10,10 @@ const router = express.Router();
 const fabricService = require("../services/fabricService");
 const mlService = require("../services/mlService");
 const logger = require("../utils/logger");
+const { authenticate } = require("../middleware/auth");
+
+// All ML endpoints need a signed-in user (their identity signs the blockchain writes).
+router.use(authenticate);
 
 const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -28,7 +32,7 @@ router.post(
   async (req, res) => {
     try {
       // Fetch shipment data from blockchain
-      const shipment = await fabricService.getShipment(req.params.shipmentId);
+      const shipment = await fabricService.getShipment(req.user.email, req.params.shipmentId);
 
       // Caller can pass extra enrichment data (port congestion, weather)
       const enrichment = req.body || {};
@@ -37,7 +41,7 @@ router.post(
       const prediction = await mlService.predictDelay(shipment, enrichment);
 
       // Store updated risk score back on blockchain
-      await fabricService.updateDelayRisk(req.params.shipmentId, prediction.delay_probability);
+      await fabricService.updateDelayRisk(req.user.email, req.params.shipmentId, prediction.delay_probability);
 
       res.json({
         success: true,
@@ -88,7 +92,7 @@ router.post(
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/batch-update", async (req, res) => {
   try {
-    const shipments = await fabricService.getAllShipments();
+    const shipments = await fabricService.getAllShipments(req.user.email);
     const activeShipments = shipments.filter(
       (s) => s.status !== "DELIVERED" && s.status !== "CREATED"
     );
@@ -96,7 +100,7 @@ router.get("/batch-update", async (req, res) => {
     const results = [];
     for (const shipment of activeShipments) {
       const prediction = await mlService.predictDelay(shipment);
-      await fabricService.updateDelayRisk(shipment.shipmentId, prediction.delay_probability);
+      await fabricService.updateDelayRisk(req.user.email, shipment.shipmentId, prediction.delay_probability);
       results.push({
         shipmentId: shipment.shipmentId,
         riskScore: prediction.delay_probability,

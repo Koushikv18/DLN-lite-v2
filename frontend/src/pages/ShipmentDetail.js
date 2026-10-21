@@ -35,7 +35,7 @@ export default function ShipmentDetail() {
   const handleEvent = async () => {
     if (!form.location || !form.description) return alert("Fill all fields");
     setSubmitting(true);
-    try { const r = await recordEvent(id, form.eventType, form.location, form.description); setShipment(r.data); setShowModal(false); setForm({ eventType: "DEPARTED_PORT", location: "", description: "" }); }
+    try { const r = await recordEvent(id, { eventType: form.eventType, location: form.location, description: form.description }); setShipment(r.data); setShowModal(false); setForm({ eventType: "DEPARTED_PORT", location: "", description: "" }); }
     catch (e) { alert("Error: " + e.message); } finally { setSubmitting(false); }
   };
 

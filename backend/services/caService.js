@@ -4,7 +4,8 @@ const crypto = require('crypto');
 const AuthUser = require('../models/AuthUser');
 require('dotenv').config();
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.createHash('sha256').update('default-dev-key').digest('hex'); // 32 bytes hex string
+const { resolveEncryptionKey } = require('../utils/encryptionKey');
+const ENCRYPTION_KEY = resolveEncryptionKey(); // 32 bytes as 64 hex chars; refuses to start in production without one
 const ENCRYPTION_ALGO = 'aes-256-gcm';
 
 // -----------------------------------------------------------------------------

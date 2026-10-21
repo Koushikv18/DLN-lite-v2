@@ -4,6 +4,7 @@ const { body, validationResult } = require("express-validator");
 
 const AuthUser = require("../models/AuthUser");
 const { registerAndEnrollUser } = require("../services/caService");
+const { findUserByToken } = require("../middleware/auth");
 
 const router = express.Router();
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,18 +40,6 @@ const sanitizeUser = (user) => ({
   createdAt: user.createdAt,
   lastLoginAt: user.lastLoginAt,
 });
-
-async function findUserByToken(req) {
-  const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!token) return null;
-
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const user = await AuthUser.findOne({ sessionTokenHash: tokenHash }).lean();
-  if (!user?.sessionExpiresAt) return null;
-  if (new Date(user.sessionExpiresAt).getTime() < Date.now()) return null;
-  return user;
-}
 
 router.post(
   "/register",

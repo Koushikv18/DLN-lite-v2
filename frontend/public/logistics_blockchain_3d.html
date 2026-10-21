@@ -361,7 +361,7 @@ body{font-family:'Syne',sans-serif;background:var(--navy);color:var(--text);min-
     <div class="field"><label>Password</label><input type="password" id="auth-pass" placeholder="••••••••" /></div>
     <div id="auth-feedback" style="min-height:18px;margin:-0.2rem 0 0.8rem;font-size:12px;color:var(--amber);text-align:center;"></div>
     <button class="btn btn-primary" id="auth-submit-btn" onclick="submitAuth()"><span class="btn-label" id="auth-submit-label">Enter Dashboard</span><span class="loader"></span></button>
-    <div style="margin-top:1rem;font-size:12px;color:var(--text2);text-align:center;">JWT secured · Role-based access · Encrypted</div>
+    <div style="margin-top:1rem;font-size:12px;color:var(--text2);text-align:center;">Role-based access · Per-user blockchain identity · Encrypted keys</div>
   </div>
 </div>
 
@@ -861,8 +861,11 @@ async function apiRequest(path, options = {}, attempt = 0) {
 
   const request = (async () => {
     try {
+      // The signed-in user's token goes on every call (before sign-in it is empty),
+      // so the backend can sign blockchain transactions with that user's own identity.
       const mergedHeaders = {
         "Content-Type": "application/json",
+        ...authHeaders(),
         ...(options.headers || {}),
       };
       const response = await fetch(`${API_BASE}${path}`, {
@@ -872,6 +875,11 @@ async function apiRequest(path, options = {}, attempt = 0) {
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
+        // A 401 on a data call means the session is gone: sign out cleanly.
+        if (response.status === 401 && currentUser?.token && !path.startsWith("/auth/")) {
+          showToast('🔒', 'Your session expired. Please sign in again.');
+          logout();
+        }
         const shouldRetry = response.status === 429 && attempt < 2;
         if (shouldRetry) {
           await delay(350 * (attempt + 1));

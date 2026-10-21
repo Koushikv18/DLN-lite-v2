@@ -6,7 +6,10 @@ const logger = require("../utils/logger");
 const fabricService = require("../services/fabricService");
 const ShipmentMeta = require("../models/ShipmentMeta");
 
+const { authenticate } = require("../middleware/auth");
+
 const router = express.Router();
+router.use(authenticate);
 
 const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -37,10 +40,10 @@ const summarizeShipment = (shipment, meta) => {
   ].join(" ") + notes + contact;
 };
 
-const buildLocalReply = async ({ message, role, context }) => {
+const buildLocalReply = async ({ message, role, context, userId }) => {
   const normalizedMessage = String(message || "").trim();
   const lowered = normalizedMessage.toLowerCase();
-  const shipments = await fabricService.getAllShipments();
+  const shipments = await fabricService.getAllShipments(userId);
   const shipmentIds = shipments.map((shipment) => shipment.shipmentId);
   const metas = shipmentIds.length
     ? await ShipmentMeta.find({ shipmentId: { $in: shipmentIds } }).lean()
@@ -142,12 +145,12 @@ router.post(
   validate,
   async (req, res) => {
     const apiKey = process.env.GROQ_API_KEY;
-    const role = req.body.role || "guest";
+    const role = req.user.role; // from the verified session, never from the client
     const context = req.body.context || {};
 
     try {
       if (!apiKey) {
-        const local = await buildLocalReply({ message: req.body.message, role, context });
+        const local = await buildLocalReply({ message: req.body.message, role, context, userId: req.user.email });
         return res.json({
           success: true,
           reply: local.reply,
@@ -212,7 +215,7 @@ router.post(
       });
     } catch (error) {
       logger.error(`POST /chat/grok error: ${error.response?.data?.error?.message || error.response?.data?.error || error.message}`);
-      const local = await buildLocalReply({ message: req.body.message, role, context });
+      const local = await buildLocalReply({ message: req.body.message, role, context, userId: req.user.email });
       res.json({
         success: true,
         reply: `${local.reply} External AI is unavailable, so this answer came from the local shipment database.`,
