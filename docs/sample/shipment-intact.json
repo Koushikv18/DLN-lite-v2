@@ -1,0 +1,83 @@
+{
+  "shipmentId": "SHP-4821",
+  "containerId": "CONT-4821",
+  "origin": "Shanghai, CN",
+  "destination": "Rotterdam, NL",
+  "carrier": "OceanFreight Co",
+  "shipper": "Org1MSP",
+  "currentHolder": "OceanFreight Co",
+  "status": "IN_CUSTOMS",
+  "events": [
+    {
+      "eventId": "EVT-SHP-4821-1",
+      "eventType": "SHIPMENT_CREATED",
+      "location": "Shanghai, CN",
+      "actor": "Org1MSP",
+      "timestamp": "2026-03-02T08:00:00Z",
+      "description": "Shipment created. Container CONT-4821 ready at Shanghai, CN",
+      "txId": "tx01ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34",
+      "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "3d772c4d63da916677684aab14352bd6429aa26521f48339511d0820ee4e40a7"
+    },
+    {
+      "eventId": "EVT-SHP-4821-2",
+      "eventType": "CUSTODY_TRANSFERRED",
+      "location": "Shanghai, CN",
+      "actor": "Org1MSP",
+      "timestamp": "2026-03-02T14:30:00Z",
+      "description": "Custody transferred from Org1MSP to OceanFreight Co at Shanghai, CN",
+      "txId": "tx02ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34",
+      "prevHash": "3d772c4d63da916677684aab14352bd6429aa26521f48339511d0820ee4e40a7",
+      "hash": "c333a6c9bb333cbf51b855d58377e5a75948501cffbcddd349163a87d13d86c3"
+    },
+    {
+      "eventId": "EVT-SHP-4821-3",
+      "eventType": "DEPARTED_PORT",
+      "location": "Shanghai, CN",
+      "actor": "Org1MSP",
+      "timestamp": "2026-03-03T06:10:00Z",
+      "description": "Vessel departed origin terminal",
+      "txId": "tx03ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34",
+      "prevHash": "c333a6c9bb333cbf51b855d58377e5a75948501cffbcddd349163a87d13d86c3",
+      "hash": "31bb962e58b598a3b8587ad156620e5697cb9f5966aa6d59d57fe682301556d3"
+    },
+    {
+      "eventId": "EVT-SHP-4821-4",
+      "eventType": "CHECKPOINT_1",
+      "location": "Suez Canal",
+      "actor": "Org1MSP",
+      "timestamp": "2026-03-19T21:45:00Z",
+      "description": "Shipment reached checkpoint 1",
+      "txId": "tx04ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34",
+      "prevHash": "31bb962e58b598a3b8587ad156620e5697cb9f5966aa6d59d57fe682301556d3",
+      "hash": "d1633212567f429c2b478ccd291ba99f9e7da59ead95e0b706a31201fbfaf213"
+    },
+    {
+      "eventId": "EVT-SHP-4821-5",
+      "eventType": "ARRIVED_PORT",
+      "location": "Rotterdam, NL",
+      "actor": "Org1MSP",
+      "timestamp": "2026-04-01T05:20:00Z",
+      "description": "Shipment arrived at destination and entered customs queue",
+      "txId": "tx05ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34",
+      "prevHash": "d1633212567f429c2b478ccd291ba99f9e7da59ead95e0b706a31201fbfaf213",
+      "hash": "be59f43d37c1aceadc3941bedc66ea49acb87472b1de19bc6bdc201b39b3d050"
+    },
+    {
+      "eventId": "EVT-SHP-4821-6",
+      "eventType": "CUSTOMS_CLEARED",
+      "location": "Rotterdam, NL",
+      "actor": "Org1MSP",
+      "timestamp": "2026-04-02T10:05:00Z",
+      "description": "Customs cleared by inspection terminal",
+      "txId": "tx06ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34ab12cd34",
+      "prevHash": "be59f43d37c1aceadc3941bedc66ea49acb87472b1de19bc6bdc201b39b3d050",
+      "hash": "e5e6ca0711e260a5d19827a4528ceece4208c8f734f42bc45d7ca4ae913d5534"
+    }
+  ],
+  "cargoType": "Electronics",
+  "weightKg": 12500,
+  "createdAt": "2026-03-02T08:00:00Z",
+  "estimatedArrival": "2026-04-02T00:00:00Z",
+  "delayRiskScore": 0.32
+}

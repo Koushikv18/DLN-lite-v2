@@ -1,6 +1,6 @@
 {
   "testEnvironment": "node",
-  "testMatch": ["**/tests/backend/**/*.test.js"],
+  "testMatch": ["**/tests/backend/**/*.test.js", "**/tests/frontend/**/*.test.js"],
   "collectCoverageFrom": [
     "backend/**/*.js",
     "!backend/wallet/**"

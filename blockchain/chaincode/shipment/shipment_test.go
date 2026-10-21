@@ -364,3 +364,263 @@ func TestUpdateStatus_RejectsUnknownStatus(t *testing.T) {
 	_, err := sc.UpdateStatus(as(stub, "carrier", "Org1MSP"), id, "TELEPORTED", "no")
 	mustFail(t, err, "invalid status")
 }
+
+// ── Hash chain ───────────────────────────────────────────────────────────────
+
+// Computed independently by backend/utils/auditChain.js (Node). If this test and
+// the Node test both pass, the two implementations produce identical hashes.
+const crossLanguageVector = "8a9e8d4a860d6e5c013150855e4ba464774fa5345863e479e2dea2f85680547b"
+
+func TestEventHash_MatchesNodeImplementation(t *testing.T) {
+	e := ShipmentEvent{
+		EventID:     "EVT-SHP-1-1",
+		EventType:   "SHIPMENT_CREATED",
+		Location:    "Rotterdam, NL — Café", // non-ASCII: byte length must be used, not rune count
+		Actor:       "Org1MSP",
+		Timestamp:   "2026-01-01T00:00:00Z",
+		Description: "Shipment created. Container CONT-1 ready",
+		TxID:        "tx-test",
+		PrevHash:    genesisHash,
+	}
+	if got := eventHash(e); got != crossLanguageVector {
+		t.Fatalf("hash differs from the Node implementation:\n go   %s\n node %s", got, crossLanguageVector)
+	}
+}
+
+func TestEventHash_FieldBoundariesAreUnambiguous(t *testing.T) {
+	a := eventHash(ShipmentEvent{EventID: "ab", EventType: "c"})
+	b := eventHash(ShipmentEvent{EventID: "a", EventType: "bc"})
+	if a == b {
+		t.Fatal("moving a character between fields must change the hash")
+	}
+}
+
+func TestChain_EventsAreSealedAndLinked(t *testing.T) {
+	sc := &SmartContract{}
+	stub := newStub()
+	id := seed(t, stub)
+	if _, err := sc.RecordEvent(as(stub, "carrier", "Org1MSP"), id, "DEPARTED_PORT", "Shanghai", "left port"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sc.TransferCustody(as(stub, "carrier", "Org1MSP"), id, "Org2MSP", "Shanghai"); err != nil {
+		t.Fatal(err)
+	}
+
+	s := load(t, stub, id)
+	if len(s.Events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(s.Events))
+	}
+	if s.Events[0].PrevHash != genesisHash {
+		t.Fatal("first event must link to the genesis hash")
+	}
+	for i, e := range s.Events {
+		if e.Hash == "" || e.Hash != eventHash(e) {
+			t.Fatalf("event %d is not correctly sealed", i)
+		}
+		if i > 0 && e.PrevHash != s.Events[i-1].Hash {
+			t.Fatalf("event %d does not link to event %d", i, i-1)
+		}
+	}
+	if report := verifyChain(s.Events); !report.Intact || report.HashedEvents != 3 || report.HeadHash != s.Events[2].Hash {
+		t.Fatalf("a freshly built chain must verify: %+v", report)
+	}
+}
+
+func TestInitLedger_SampleDataIsSealed(t *testing.T) {
+	sc := &SmartContract{}
+	stub := newStub()
+	if err := sc.InitLedger(as(stub, "shipper", "Org1MSP")); err != nil {
+		t.Fatal(err)
+	}
+	s := load(t, stub, "SHP-001")
+	if report := verifyChain(s.Events); !report.Intact || report.HashedEvents != len(s.Events) || report.LegacyEvents != 0 {
+		t.Fatalf("sample shipment chain should be fully sealed and intact: %+v", report)
+	}
+}
+
+// builtChain returns a shipment with 4 sealed events.
+func builtChain(t *testing.T) (*fakeStub, string, Shipment) {
+	t.Helper()
+	sc := &SmartContract{}
+	stub := newStub()
+	id := seed(t, stub)
+	carrier := as(stub, "carrier", "Org1MSP")
+	for _, step := range []struct{ typ, loc string }{{"DEPARTED_PORT", "Shanghai"}, {"CHECKPOINT_1", "Suez"}, {"ARRIVED_PORT", "Rotterdam"}} {
+		if _, err := sc.RecordEvent(carrier, id, step.typ, step.loc, "ok"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return stub, id, load(t, stub, id)
+}
+
+func TestChain_DetectsEveryKindOfTampering(t *testing.T) {
+	_, _, original := builtChain(t)
+	clone := func() []ShipmentEvent {
+		out := make([]ShipmentEvent, len(original.Events))
+		copy(out, original.Events)
+		return out
+	}
+
+	cases := []struct {
+		name   string
+		mutate func([]ShipmentEvent) []ShipmentEvent
+		at     int
+	}{
+		{"edited description", func(e []ShipmentEvent) []ShipmentEvent { e[1].Description = "forged"; return e }, 1},
+		{"edited location", func(e []ShipmentEvent) []ShipmentEvent { e[2].Location = "Singapore"; return e }, 2},
+		{"edited actor", func(e []ShipmentEvent) []ShipmentEvent { e[1].Actor = "EvilOrgMSP"; return e }, 1},
+		{"deleted middle event", func(e []ShipmentEvent) []ShipmentEvent { return append(e[:1], e[2:]...) }, 1},
+		{"re-ordered events", func(e []ShipmentEvent) []ShipmentEvent { e[1], e[2] = e[2], e[1]; return e }, 1},
+		{"stripped hash", func(e []ShipmentEvent) []ShipmentEvent { e[2].Hash = ""; return e }, 2},
+		{"forged link", func(e []ShipmentEvent) []ShipmentEvent { e[2].PrevHash = genesisHash; return e }, 2},
+	}
+	for _, tc := range cases {
+		report := verifyChain(tc.mutate(clone()))
+		if report.Intact {
+			t.Fatalf("%s: tampering was NOT detected", tc.name)
+		}
+		if report.BrokenAtIndex != tc.at {
+			t.Fatalf("%s: expected the break at event %d, reported %d (%s)", tc.name, tc.at, report.BrokenAtIndex, report.Reason)
+		}
+	}
+}
+
+func TestChain_EditingAndRehashingOneEventStillBreaksTheNext(t *testing.T) {
+	// A smart forger edits event 1 AND recomputes its hash. Event 2 still points
+	// at the old hash, so the chain breaks there.
+	_, _, original := builtChain(t)
+	events := make([]ShipmentEvent, len(original.Events))
+	copy(events, original.Events)
+	events[1].Description = "forged"
+	events[1].Hash = eventHash(events[1])
+
+	report := verifyChain(events)
+	if report.Intact || report.BrokenAtIndex != 2 {
+		t.Fatalf("expected the break at event 2, got %+v", report)
+	}
+}
+
+func TestChain_LegacyEventsAllowedOnlyAtTheStart(t *testing.T) {
+	_, _, original := builtChain(t)
+
+	legacyThenSealed := make([]ShipmentEvent, len(original.Events))
+	copy(legacyThenSealed, original.Events)
+	// Treat the first event as written before sealing existed, then re-link.
+	legacyThenSealed[0].Hash, legacyThenSealed[0].PrevHash = "", ""
+	legacyThenSealed[1].PrevHash = genesisHash
+	legacyThenSealed[1].Hash = eventHash(legacyThenSealed[1])
+	prev := legacyThenSealed[1].Hash
+	for i := 2; i < len(legacyThenSealed); i++ {
+		legacyThenSealed[i].PrevHash = prev
+		legacyThenSealed[i].Hash = eventHash(legacyThenSealed[i])
+		prev = legacyThenSealed[i].Hash
+	}
+	report := verifyChain(legacyThenSealed)
+	if !report.Intact || report.LegacyEvents != 1 {
+		t.Fatalf("legacy events at the start must be tolerated: %+v", report)
+	}
+}
+
+func TestVerifyEventChain_ReadsTheLedgerAndCatchesATamperedRecord(t *testing.T) {
+	sc := &SmartContract{}
+	stub, id, _ := builtChain(t)
+	ctx := as(stub, "customs", "Org1MSP")
+
+	ok, err := sc.VerifyEventChain(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok["intact"] != true || ok["eventCount"] != 4 {
+		t.Fatalf("untouched ledger record should verify: %v", ok)
+	}
+
+	// Someone edits the stored record directly (as a database admin would).
+	s := load(t, stub, id)
+	s.Events[1].Description = "forged"
+	raw, _ := json.Marshal(s)
+	stub.state[id] = raw
+
+	bad, err := sc.VerifyEventChain(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad["intact"] != false || bad["brokenAtIndex"] != 1 {
+		t.Fatalf("tampered record must be flagged at event 1: %v", bad)
+	}
+}
+
+// ── VerifyIntegrity (structural comparison) ──────────────────────────────────
+
+func TestVerifyIntegrity_IdenticalAndReorderedKeysPass(t *testing.T) {
+	sc := &SmartContract{}
+	stub, id, _ := builtChain(t)
+	ctx := as(stub, "customs", "Org1MSP")
+
+	res, err := sc.VerifyIntegrity(ctx, id, string(stub.state[id]))
+	if err != nil || res["integrityPass"] != true {
+		t.Fatalf("identical copy must pass: %v %v", res, err)
+	}
+
+	// Same data, different key order and whitespace: still the same record.
+	var generic map[string]interface{}
+	_ = json.Unmarshal(stub.state[id], &generic)
+	pretty, _ := json.MarshalIndent(generic, "", "   ") // Go sorts map keys alphabetically
+	res, err = sc.VerifyIntegrity(ctx, id, string(pretty))
+	if err != nil || res["integrityPass"] != true {
+		t.Fatalf("key order / whitespace must not cause a false alarm: %v %v", res, err)
+	}
+}
+
+func TestVerifyIntegrity_ReportsExactlyWhichFieldsWereChanged(t *testing.T) {
+	sc := &SmartContract{}
+	stub, id, _ := builtChain(t)
+	ctx := as(stub, "customs", "Org1MSP")
+
+	var generic map[string]interface{}
+	_ = json.Unmarshal(stub.state[id], &generic)
+	generic["weightKg"] = 50.0
+	generic["events"].([]interface{})[1].(map[string]interface{})["description"] = "forged"
+	tampered, _ := json.Marshal(generic)
+
+	res, err := sc.VerifyIntegrity(ctx, id, string(tampered))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res["integrityPass"] != false {
+		t.Fatal("tampering must be detected")
+	}
+	paths := map[string]bool{}
+	for _, d := range res["differences"].([]fieldDiff) {
+		paths[d.Path] = true
+	}
+	if !paths["weightKg"] || !paths["events[1].description"] || len(paths) != 2 {
+		t.Fatalf("expected exactly weightKg and events[1].description, got %v", paths)
+	}
+}
+
+func TestVerifyIntegrity_ExtraClaimedFieldsAreIgnoredNotFlagged(t *testing.T) {
+	sc := &SmartContract{}
+	stub, id, _ := builtChain(t)
+	ctx := as(stub, "customs", "Org1MSP")
+
+	var generic map[string]interface{}
+	_ = json.Unmarshal(stub.state[id], &generic)
+	generic["notes"] = "off-chain note from the database"
+	withExtra, _ := json.Marshal(generic)
+
+	res, err := sc.VerifyIntegrity(ctx, id, string(withExtra))
+	if err != nil || res["integrityPass"] != true {
+		t.Fatalf("off-chain extras are not tampering: %v %v", res, err)
+	}
+	ignored := res["ignoredFields"].([]string)
+	if len(ignored) != 1 || ignored[0] != "notes" {
+		t.Fatalf("extra field should be listed as ignored: %v", ignored)
+	}
+}
+
+func TestVerifyIntegrity_RejectsInvalidJSON(t *testing.T) {
+	sc := &SmartContract{}
+	stub, id, _ := builtChain(t)
+	_, err := sc.VerifyIntegrity(as(stub, "customs", "Org1MSP"), id, "{not json")
+	mustFail(t, err, "not valid JSON")
+}

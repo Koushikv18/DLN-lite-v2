@@ -9,6 +9,7 @@ const request = require("supertest");
 const app     = require("../../backend/server");
 const fabricService = require("../../backend/services/fabricService");
 const ShipmentMeta  = require("../../backend/models/ShipmentMeta");
+const { GENESIS_HASH, eventHash } = require("../../backend/utils/auditChain");
 
 // Sign requests in as a given role. Tokens map to mock users below.
 const as = (role) => ({ Authorization: `Bearer ${role}-token` });
@@ -55,6 +56,7 @@ jest.mock("../../backend/services/fabricService", () => ({
   transferCustody:   jest.fn().mockResolvedValue({ shipmentId: "SHP-TEST01", currentHolder: "NewHolder" }),
   updateStatus:      jest.fn().mockResolvedValue({ shipmentId: "SHP-TEST01", status: "DELAYED" }),
   verifyIntegrity:   jest.fn().mockResolvedValue({ intact: true }),
+  verifyEventChain:  jest.fn(),
 }));
 
 // ── Mock ML service ────────────────────────────────────────────────────────
@@ -319,5 +321,80 @@ describe("Role-based access at the API layer", () => {
       .send({ status: "DELIVERED", reason: "forged" });
     expect(res.statusCode).toBe(403);
     expect(fabricService.updateStatus).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custody audit: the chain is verified by the ledger AND independently here
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("GET /api/shipments/:id/audit", () => {
+  const sealed = (count) => {
+    const events = [];
+    let prev = GENESIS_HASH;
+    for (let n = 1; n <= count; n += 1) {
+      const event = {
+        eventId: `EVT-${n}`, eventType: "CHECKPOINT", location: `Port ${n}`, actor: "Org1MSP",
+        timestamp: `2026-01-0${n}T00:00:00Z`, description: `step ${n}`, txId: `tx-${n}`, prevHash: prev,
+      };
+      event.hash = eventHash(event);
+      events.push(event);
+      prev = event.hash;
+    }
+    return events;
+  };
+  const ledgerReport = (events, overrides = {}) => ({
+    shipmentId: "SHP-TEST01", intact: true, eventCount: events.length, hashedEvents: events.length,
+    legacyEvents: 0, headHash: events[events.length - 1].hash, brokenAtIndex: -1, reason: "", ...overrides,
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/shipments/SHP-TEST01/audit");
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("reports an intact trail when both verifiers agree, with the head-hash fingerprint", async () => {
+    const events = sealed(3);
+    fabricService.getShipment.mockResolvedValueOnce({ shipmentId: "SHP-TEST01", events });
+    fabricService.verifyEventChain.mockResolvedValueOnce(ledgerReport(events));
+
+    const res = await request(app).get("/api/shipments/SHP-TEST01/audit").set(as("customs"));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.independent.intact).toBe(true);
+    expect(res.body.data.agree).toBe(true);
+    expect(res.body.data.headHash).toBe(events[2].hash);
+    expect(fabricService.verifyEventChain).toHaveBeenCalledWith(EMAIL("customs"), "SHP-TEST01");
+  });
+
+  it("flags tampering found by the independent check", async () => {
+    const events = sealed(3);
+    events[1].description = "forged";
+    fabricService.getShipment.mockResolvedValueOnce({ shipmentId: "SHP-TEST01", events });
+    fabricService.verifyEventChain.mockResolvedValueOnce(ledgerReport(events, { intact: false, brokenAtIndex: 1 }));
+
+    const res = await request(app).get("/api/shipments/SHP-TEST01/audit").set(as("customs"));
+    expect(res.body.data.independent.intact).toBe(false);
+    expect(res.body.data.independent.brokenAtIndex).toBe(1);
+  });
+
+  it("reports agree=false when the two verifiers disagree", async () => {
+    const events = sealed(3);
+    fabricService.getShipment.mockResolvedValueOnce({ shipmentId: "SHP-TEST01", events });
+    fabricService.verifyEventChain.mockResolvedValueOnce(ledgerReport(events, { intact: false, brokenAtIndex: 2 }));
+
+    const res = await request(app).get("/api/shipments/SHP-TEST01/audit").set(as("carrier"));
+    expect(res.body.data.agree).toBe(false);
+  });
+
+  it("still returns the independent result (agree=null) if the ledger check fails", async () => {
+    const events = sealed(2);
+    fabricService.getShipment.mockResolvedValueOnce({ shipmentId: "SHP-TEST01", events });
+    fabricService.verifyEventChain.mockRejectedValueOnce(new Error("peer unreachable"));
+
+    const res = await request(app).get("/api/shipments/SHP-TEST01/audit").set(as("carrier"));
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.agree).toBeNull();
+    expect(res.body.data.ledger.error).toMatch(/peer unreachable/);
+    expect(res.body.data.independent.intact).toBe(true);
   });
 });

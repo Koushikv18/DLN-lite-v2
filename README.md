@@ -143,6 +143,8 @@ cd blockchain/blockchain/network
 
 - [Architecture, trust model and known limitations](docs/ARCHITECTURE.md)
 - [ML evaluation (cross-validation, oracle ceiling, calibration, robustness)](docs/ML_EVALUATION.md) — reproduce with `python ml/evaluate_model.py`
+- [Presentation guide: pitch, demo script and viva Q&A](docs/PRESENTATION.md)
+- Offline tamper check (no network or blockchain needed): `node scripts/verifyExport.js docs/sample/shipment-tampered.json`
 - [CI workflow](docs/ci-workflow.yml) — move to `.github/workflows/ci.yml` to enable GitHub Actions
 - ML service endpoints: `POST /predict`, `POST /batch-predict`, `POST /explain` (per-shipment reasons), `GET /model-info`, `GET /health`
 

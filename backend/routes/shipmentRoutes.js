@@ -14,6 +14,7 @@ const mlService = require("../services/mlService");
 const ShipmentMeta = require("../models/ShipmentMeta");
 const logger = require("../utils/logger");
 const { authenticate, requireRole } = require("../middleware/auth");
+const { verifyChain } = require("../utils/auditChain");
 
 // Middleware to handle validation errors
 const validate = (req, res, next) => {
@@ -205,6 +206,39 @@ router.get("/:id/history", param("id").notEmpty(), validate, async (req, res) =>
   try {
     const history = await fabricService.getShipmentHistory(req.user.email, req.params.id);
     res.json({ success: true, count: history.length, data: history });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/shipments/:id/audit
+// Custody-trail audit. The chain is verified TWICE, independently:
+//   1. by the chaincode, from the ledger's own copy of the record
+//   2. by this server, re-computing every SHA-256 from the returned events
+// "agree" is true only if both reach the same verdict and the same head hash.
+// The head hash is a short fingerprint of the whole custody trail.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/:id/audit", param("id").notEmpty(), validate, async (req, res) => {
+  try {
+    const shipment = await fabricService.getShipment(req.user.email, req.params.id);
+    const independent = verifyChain(shipment.events || []);
+
+    let ledger;
+    try {
+      ledger = await fabricService.verifyEventChain(req.user.email, req.params.id);
+    } catch (error) {
+      ledger = { error: error.message };
+    }
+
+    const agree = ledger.error
+      ? null
+      : ledger.intact === independent.intact && ledger.headHash === independent.headHash;
+
+    res.json({
+      success: true,
+      data: { shipmentId: req.params.id, headHash: independent.headHash, independent, ledger, agree },
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

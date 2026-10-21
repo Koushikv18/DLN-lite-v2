@@ -372,6 +372,7 @@ body{font-family:'Syne',sans-serif;background:var(--navy);color:var(--text);min-
     <div class="nav-tabs" id="nav-tabs"></div>
     <div class="user-badge">
       <div class="user-dot"></div>
+      <span id="data-mode-badge" title="" style="font-size:10px;font-weight:700;letter-spacing:.5px;padding:3px 8px;border-radius:99px;margin-right:8px;border:1px solid var(--border);">…</span>
       <span id="user-name-display">User</span>
       <button class="btn btn-sm btn-outline" onclick="logout()" style="margin-left:8px;">Logout</button>
     </div>
@@ -910,6 +911,24 @@ function authHeaders() {
   return currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {};
 }
 
+// Escape text before putting it into innerHTML (ledger data can contain user-typed text).
+function escHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+// Always show whether the dashboard is reading the real ledger or cached demo data.
+function updateDataModeBadge() {
+  const badge = document.getElementById("data-mode-badge");
+  if (!badge) return;
+  const live = dataMode === "live";
+  badge.textContent = live ? "● LIVE · BLOCKCHAIN" : "● DEMO DATA · NOT ON LEDGER";
+  badge.style.color = live ? "#2ecc71" : "#f5a623";
+  badge.style.borderColor = live ? "rgba(46,204,113,.5)" : "rgba(245,166,35,.6)";
+  badge.title = live
+    ? "Shipments are being read from the blockchain through the API."
+    : "The API could not be reached or you are signed out. What you see is cached demo data and is NOT on the ledger.";
+}
+
 function setAuthFeedback(message = "", tone = "var(--amber)") {
   const feedback = document.getElementById("auth-feedback");
   if (!feedback) return;
@@ -1226,10 +1245,12 @@ async function loadShipments() {
     const fetched = (response.data || []).map(mapShipment);
     shipments = mergeShipments(shipments, fetched);
     dataMode = "live";
+    updateDataModeBadge();
   } catch (error) {
     shipments = shipments.length ? shipments : getFallbackShipments().map(mapShipment);
     persistShipments();
     dataMode = "fallback";
+    updateDataModeBadge();
   }
   updateLandingStats();
   return shipments;
@@ -2233,6 +2254,7 @@ async function showApp(){
   document.getElementById('landing').classList.remove('active');
   document.getElementById('app').classList.add('active');
   document.getElementById('user-name-display').textContent=currentUser.name||currentUser.email||'User';
+  updateDataModeBadge();
   const chatbotSub = document.getElementById('chatbot-sub');
   if (chatbotSub) chatbotSub.textContent = `Ask about ${currentRole || 'operations'} shipments, carrier flow, customs, or risk.`;
   const tabs=document.getElementById('nav-tabs');
@@ -2791,29 +2813,54 @@ function renderRiskSection(targetId) {
 async function verifyCustomsShipment(id) {
   const shipment = shipments.find(s => s.id === id); if (!shipment) return;
   const output = document.getElementById("customs-verify-output");
-  output.innerHTML = `<div class="feed-item"><div class="feed-text">Verifying ${id} against the ledger...</div></div>`;
+  const row = (key, value, color) =>
+    `<div class="verify-row"><span class="verify-key">${escHtml(key)}</span><span class="verify-val"${color ? ` style="color:${color}"` : ""}>${escHtml(value)}</span></div>`;
+  const GREEN = "#2ecc71", RED = "#ff5c5c", AMBER = "#f5a623";
+  output.innerHTML = `<div class="feed-item"><div class="feed-text">Verifying ${escHtml(id)} against the ledger...</div></div>`;
+
   try {
-    const res = await apiRequest(`/shipments/${id}/verify`, {
+    const res = await apiRequest(`/shipments/${encodeURIComponent(id)}/verify`, {
       method: "POST",
       body: JSON.stringify({ claimedData: shipment.raw }),
     });
     const data = res.data || {};
-    output.innerHTML = `
-      <div class="verify-box">
-        <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${data.shipmentId}</span></div>
-        <div class="verify-row"><span class="verify-key">Result</span><span class="verify-val">${data.integrityPass ? "Integrity verified" : "Tamper detected"}</span></div>
-        <div class="verify-row"><span class="verify-key">TX ID</span><span class="verify-val">${data.txId}</span></div>
-      <div class="verify-row"><span class="verify-key">Verified At</span><span class="verify-val">${data.verifiedAt}</span></div>
+    const diffs = Array.isArray(data.differences) ? data.differences : [];
+
+    let html = `<div class="verify-box">
+      ${row("Shipment", data.shipmentId)}
+      ${row("Record vs ledger", data.integrityPass ? "INTEGRITY VERIFIED" : `TAMPER DETECTED (${diffs.length} field${diffs.length === 1 ? "" : "s"})`, data.integrityPass ? GREEN : RED)}
+      ${diffs.map(d => row(d.path, `ledger: ${JSON.stringify(d.onChain)}  →  claimed: ${JSON.stringify(d.claimed)}`, RED)).join("")}
+      ${data.ledgerFingerprint ? row("Ledger fingerprint", `${data.ledgerFingerprint.slice(0, 16)}…`) : ""}
+      ${row("TX ID", data.txId)}
+      ${row("Verified at", data.verifiedAt)}
+    </div>`;
+
+    // Custody trail: verified twice, by the ledger and independently by the server.
+    try {
+      const audit = (await apiRequest(`/shipments/${encodeURIComponent(id)}/audit`)).data || {};
+      const chain = audit.independent || {};
+      const agreeText = audit.agree === true ? "Ledger and independent check AGREE"
+        : audit.agree === false ? "WARNING: the two checks DISAGREE"
+        : "Ledger check unavailable; independent check only";
+      html += `<div class="verify-box">
+        ${row("Custody chain", chain.intact ? "INTACT" : `BROKEN at event ${chain.brokenAtIndex}`, chain.intact ? GREEN : RED)}
+        ${chain.intact ? "" : row("Reason", chain.reason, RED)}
+        ${row("Events sealed", `${chain.hashedEvents} of ${chain.eventCount}${chain.legacyEvents ? ` (${chain.legacyEvents} legacy)` : ""}`)}
+        ${row("Audit fingerprint", `${String(audit.headHash || "").slice(0, 16)}…`)}
+        ${row("Cross-check", agreeText, audit.agree === true ? GREEN : AMBER)}
       </div>`;
+    } catch (auditError) {
+      html += `<div class="feed-item"><div class="feed-text">Custody-chain audit unavailable: ${escHtml(auditError.message)}</div></div>`;
+    }
+    output.innerHTML = html;
   } catch (error) {
+    // Never report a pass when the check itself could not run.
     output.innerHTML = `
       <div class="verify-box">
-        <div class="verify-row"><span class="verify-key">Shipment</span><span class="verify-val">${shipment.id}</span></div>
-        <div class="verify-row"><span class="verify-key">Result</span><span class="verify-val">Integrity verified</span></div>
-        <div class="verify-row"><span class="verify-key">TX ID</span><span class="verify-val">${shipment.hash}</span></div>
-        <div class="verify-row"><span class="verify-key">Verified At</span><span class="verify-val">${new Date().toISOString()}</span></div>
+        ${row("Shipment", shipment.id)}
+        ${row("Result", "VERIFICATION UNAVAILABLE", AMBER)}
       </div>
-      <div class="feed-item"><div class="feed-text">${error.message}</div></div>`;
+      <div class="feed-item"><div class="feed-text">The ledger could not be reached, so nothing was verified. (${escHtml(error.message)})</div></div>`;
   }
 }
 

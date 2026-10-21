@@ -131,4 +131,10 @@ module.exports = {
     const result = await c.evaluateTransaction("VerifyIntegrity", shipmentId, claimedDataJSON);
     return parseResponse(result);
   }
+
+  async verifyEventChain(userId, shipmentId) {
+    const c = await this.getContract(userId);
+    const result = await c.evaluateTransaction("VerifyEventChain", shipmentId);
+    return parseResponse(result);
+  }
 };

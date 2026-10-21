@@ -1,9 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -63,6 +67,8 @@ type ShipmentEvent struct {
 	Timestamp   string `json:"timestamp"`
 	Description string `json:"description"`
 	TxID        string `json:"txId"`        // blockchain transaction ID for audit
+	PrevHash    string `json:"prevHash,omitempty"` // hash of the previous event (genesis hash for the first)
+	Hash        string `json:"hash,omitempty"`     // SHA-256 seal over this event and PrevHash
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +109,166 @@ func txTimestamp(ctx contractapi.TransactionContextInterface) (string, error) {
 		return "", fmt.Errorf("failed to read transaction timestamp: %v", err)
 	}
 	return time.Unix(ts.Seconds, int64(ts.Nanos)).UTC().Format(time.RFC3339), nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Event hash chain
+//
+// Every custody event is sealed with a SHA-256 hash that covers the event's own
+// fields AND the hash of the event before it. Editing, deleting, inserting or
+// re-ordering any event breaks every hash after it. The last hash (the "head")
+// is a short fingerprint of the entire custody trail, and anyone holding an
+// exported copy of the history can re-check it offline with no access to the
+// ledger (see backend/utils/auditChain.js, which computes the identical hash).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// genesisHash is the PrevHash of the first sealed event in a shipment.
+const genesisHash = "0000000000000000000000000000000000000000000000000000000000000000"
+
+// eventHash hashes the event's fields in a fixed order. Every field is
+// length-prefixed (byte length) so that ("ab","c") and ("a","bc") differ.
+func eventHash(e ShipmentEvent) string {
+	h := sha256.New()
+	for _, field := range []string{e.EventID, e.EventType, e.Location, e.Actor, e.Timestamp, e.Description, e.TxID, e.PrevHash} {
+		fmt.Fprintf(h, "%d:%s|", len(field), field)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// chainHead returns the hash of the last sealed event, or the genesis hash.
+func chainHead(events []ShipmentEvent) string {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Hash != "" {
+			return events[i].Hash
+		}
+	}
+	return genesisHash
+}
+
+// sealEvent links an event to the end of the shipment's chain and appends it.
+func sealEvent(shipment *Shipment, e ShipmentEvent) {
+	e.PrevHash = chainHead(shipment.Events)
+	e.Hash = eventHash(e)
+	shipment.Events = append(shipment.Events, e)
+}
+
+// resealEvents rebuilds the chain over the events a shipment starts with.
+func resealEvents(shipment *Shipment) {
+	events := shipment.Events
+	shipment.Events = nil
+	for _, e := range events {
+		e.PrevHash, e.Hash = "", ""
+		sealEvent(shipment, e)
+	}
+}
+
+// ChainReport is the outcome of checking a shipment's hash chain.
+type ChainReport struct {
+	Intact        bool
+	EventCount    int
+	HashedEvents  int
+	LegacyEvents  int
+	HeadHash      string
+	BrokenAtIndex int // -1 when the chain is intact
+	Reason        string
+}
+
+// verifyChain walks the events and re-computes every hash. Events written
+// before sealing existed (no hash) are tolerated only at the very start.
+func verifyChain(events []ShipmentEvent) ChainReport {
+	report := ChainReport{Intact: true, EventCount: len(events), HeadHash: genesisHash, BrokenAtIndex: -1}
+	prev := genesisHash
+	sealedSeen := false
+
+	fail := func(i int, reason string) ChainReport {
+		report.Intact = false
+		report.BrokenAtIndex = i
+		report.Reason = reason
+		return report
+	}
+
+	for i, e := range events {
+		if e.Hash == "" {
+			if sealedSeen {
+				return fail(i, fmt.Sprintf("event %d has no hash but follows sealed events (hash stripped)", i))
+			}
+			report.LegacyEvents++
+			continue
+		}
+		sealedSeen = true
+		if e.PrevHash != prev {
+			return fail(i, fmt.Sprintf("event %d does not link to the previous event (an event was removed, inserted or re-ordered)", i))
+		}
+		if eventHash(e) != e.Hash {
+			return fail(i, fmt.Sprintf("event %d content does not match its hash (event was edited)", i))
+		}
+		report.HashedEvents++
+		prev = e.Hash
+		report.HeadHash = e.Hash
+	}
+	return report
+}
+
+// FieldDiff describes one difference between the claimed and on-chain record.
+type fieldDiff struct {
+	Path    string      `json:"path"`
+	OnChain interface{} `json:"onChain"`
+	Claimed interface{} `json:"claimed"`
+}
+
+// diffJSON compares decoded JSON values. Fields that exist only in the claimed
+// copy are not on the ledger, so they are reported as ignored, not as tampering.
+func diffJSON(path string, onChain, claimed interface{}, diffs *[]fieldDiff, ignored *[]string) {
+	switch a := onChain.(type) {
+	case map[string]interface{}:
+		b, ok := claimed.(map[string]interface{})
+		if !ok {
+			*diffs = append(*diffs, fieldDiff{path, onChain, claimed})
+			return
+		}
+		keys := make([]string, 0, len(a))
+		for k := range a {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			child := k
+			if path != "" {
+				child = path + "." + k
+			}
+			bv, present := b[k]
+			if !present {
+				*diffs = append(*diffs, fieldDiff{child, a[k], nil})
+				continue
+			}
+			diffJSON(child, a[k], bv, diffs, ignored)
+		}
+		for k := range b {
+			if _, onLedger := a[k]; !onLedger {
+				child := k
+				if path != "" {
+					child = path + "." + k
+				}
+				*ignored = append(*ignored, child)
+			}
+		}
+	case []interface{}:
+		b, ok := claimed.([]interface{})
+		if !ok {
+			*diffs = append(*diffs, fieldDiff{path, onChain, claimed})
+			return
+		}
+		if len(a) != len(b) {
+			*diffs = append(*diffs, fieldDiff{path + ".length", len(a), len(b)})
+		}
+		for i := 0; i < len(a) && i < len(b); i++ {
+			diffJSON(fmt.Sprintf("%s[%d]", path, i), a[i], b[i], diffs, ignored)
+		}
+	default:
+		if !reflect.DeepEqual(onChain, claimed) {
+			*diffs = append(*diffs, fieldDiff{path, onChain, claimed})
+		}
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +341,7 @@ func (s *SmartContract) InitLedger(ctx contractapi.TransactionContextInterface) 
 	}
 
 	for _, shipment := range shipments {
+		resealEvents(&shipment)
 		shipmentJSON, err := json.Marshal(shipment)
 		if err != nil {
 			return fmt.Errorf("failed to marshal shipment %s: %v", shipment.ShipmentID, err)
@@ -256,6 +423,7 @@ func (s *SmartContract) CreateShipment(
 			},
 		},
 	}
+	resealEvents(&shipment) // seal the first event into the hash chain
 
 	shipmentJSON, err := json.Marshal(shipment)
 	if err != nil {
@@ -320,7 +488,7 @@ func (s *SmartContract) RecordEvent(
 		TxID:        ctx.GetStub().GetTxID(),
 	}
 
-	shipment.Events = append(shipment.Events, newEvent)
+	sealEvent(shipment, newEvent)
 
 	// Auto-update status based on event type
 	shipment.Status = s.deriveStatus(eventType, shipment.Status)
@@ -385,7 +553,7 @@ func (s *SmartContract) TransferCustody(
 		Description: fmt.Sprintf("Custody transferred from %s to %s at %s", previousHolder, newHolder, location),
 		TxID:        ctx.GetStub().GetTxID(),
 	}
-	shipment.Events = append(shipment.Events, transferEvent)
+	sealEvent(shipment, transferEvent)
 
 	return s.saveShipment(ctx, shipment)
 }
@@ -458,7 +626,7 @@ func (s *SmartContract) MarkDelivered(
 		Description: fmt.Sprintf("Shipment delivered to %s", shipment.Destination),
 		TxID:        ctx.GetStub().GetTxID(),
 	}
-	shipment.Events = append(shipment.Events, deliveryEvent)
+	sealEvent(shipment, deliveryEvent)
 
 	return s.saveShipment(ctx, shipment)
 }
@@ -622,7 +790,7 @@ func (s *SmartContract) UpdateStatus(
 	clientOrg, _ := ctx.GetClientIdentity().GetMSPID()
 	oldStatus := string(shipment.Status)
 	shipment.Status = status
-	shipment.Events = append(shipment.Events, ShipmentEvent{
+	sealEvent(shipment, ShipmentEvent{
 		EventID:     fmt.Sprintf("EVT-%s-%d", shipmentID, len(shipment.Events)+1),
 		EventType:   "STATUS_UPDATED",
 		Location:    "N/A",
@@ -648,17 +816,63 @@ func (s *SmartContract) VerifyIntegrity(
 	if err != nil || onChainJSON == nil {
 		return nil, fmt.Errorf("shipment %s not found", shipmentID)
 	}
-	isMatch := string(onChainJSON) == claimedDataJSON
+
+	// Compare the decoded values, not the raw bytes: a copy that differs only in
+	// key order or whitespace is the same record; a changed value is not.
+	var onChain, claimed interface{}
+	if err := json.Unmarshal(onChainJSON, &onChain); err != nil {
+		return nil, fmt.Errorf("on-chain record is not valid JSON: %v", err)
+	}
+	if err := json.Unmarshal([]byte(claimedDataJSON), &claimed); err != nil {
+		return nil, fmt.Errorf("claimed data is not valid JSON: %v", err)
+	}
+
+	diffs := []fieldDiff{}
+	ignored := []string{}
+	diffJSON("", onChain, claimed, &diffs, &ignored)
+	sort.Strings(ignored)
+
+	isMatch := len(diffs) == 0
 	msg := "INTEGRITY VERIFIED — data matches ledger exactly"
 	if !isMatch {
-		msg = "INTEGRITY FAILED — data has been tampered with or modified"
+		msg = fmt.Sprintf("INTEGRITY FAILED — %d field(s) differ from the ledger", len(diffs))
 	}
+	fingerprint := sha256.Sum256(onChainJSON)
+	return map[string]interface{}{
+		"shipmentId":        shipmentID,
+		"integrityPass":     isMatch,
+		"differences":       diffs,
+		"ignoredFields":     ignored,
+		"ledgerFingerprint": hex.EncodeToString(fingerprint[:]),
+		"verifiedAt":        time.Now().UTC().Format(time.RFC3339),
+		"txId":              ctx.GetStub().GetTxID(),
+		"message":           msg,
+	}, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VerifyEventChain — re-computes the hash chain over a shipment's events and
+// reports whether the custody trail is intact, with its head-hash fingerprint.
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (s *SmartContract) VerifyEventChain(
+	ctx contractapi.TransactionContextInterface,
+	shipmentID string,
+) (map[string]interface{}, error) {
+	shipment, err := s.getShipment(ctx, shipmentID)
+	if err != nil {
+		return nil, err
+	}
+	report := verifyChain(shipment.Events)
 	return map[string]interface{}{
 		"shipmentId":    shipmentID,
-		"integrityPass": isMatch,
-		"verifiedAt":    time.Now().UTC().Format(time.RFC3339),
-		"txId":          ctx.GetStub().GetTxID(),
-		"message":       msg,
+		"intact":        report.Intact,
+		"eventCount":    report.EventCount,
+		"hashedEvents":  report.HashedEvents,
+		"legacyEvents":  report.LegacyEvents,
+		"headHash":      report.HeadHash,
+		"brokenAtIndex": report.BrokenAtIndex,
+		"reason":        report.Reason,
 	}, nil
 }
 

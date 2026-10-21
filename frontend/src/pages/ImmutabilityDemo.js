@@ -167,6 +167,17 @@ export default function ImmutabilityDemo({ embedded = false, shipments = [] }) {
             <div className="cf-card-soft"><strong>Verified at</strong><div className="cf-timeline-time">{result.verifiedAt}</div></div>
             <div className="cf-card-soft"><strong>TX ID</strong><div className="cf-timeline-time">{result.txId}</div></div>
           </div>
+
+          {Array.isArray(result.differences) && result.differences.length > 0 ? (
+            <div className="cf-card-soft" style={{ marginTop: 18 }}>
+              <strong>What was changed</strong>
+              {result.differences.map((diff) => (
+                <div key={diff.path} className="cf-timeline-time" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                  {diff.path}: ledger {JSON.stringify(diff.onChain)} → claimed {JSON.stringify(diff.claimed)}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
     </div>
